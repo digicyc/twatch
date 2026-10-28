@@ -9,7 +9,7 @@ ROOT  := $(abspath ..)
 BUILD := build
 FQBN  := esp32:esp32:twatch_ultra:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=default,MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,PartitionScheme=app3M_fat9M_16MB,DebugLevel=none,LoopCore=1,EventsCore=1,EraseFlash=none,JTAGAdapter=default,Revision=$(strip $(RADIO))
 
-.PHONY: build upload monitor flash ports clean
+.PHONY: build upload monitor flash settime ports clean
 
 build:
 	arduino-cli compile --fqbn '$(FQBN)' --build-path $(BUILD) \
@@ -24,6 +24,11 @@ monitor:
 	arduino-cli monitor --port $(PORT) --config baudrate=$(BAUD)
 
 flash: build upload monitor
+
+# Sends the host's current Unix time to the running sketch, which sets its RTC.
+settime:
+	@test -n "$(PORT)" || { echo "No watch serial port found; plug it in or pass PORT=/dev/ttyACMx"; exit 1; }
+	stty -F $(PORT) raw -echo && printf 'T%s\n' "$$(date +%s)" > $(PORT)
 
 ports:
 	arduino-cli board list
