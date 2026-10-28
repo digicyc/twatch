@@ -8,6 +8,7 @@ make build              # compile into ./build
 make upload             # flash (auto-detects /dev/ttyACM*, or pass PORT=...)
 make monitor            # serial console at 115200
 make flash              # build + upload + monitor
+make settime            # set the watch's RTC from this computer's clock (sketch must be running)
 make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX1262
 ```
 
