@@ -11,10 +11,14 @@ static const uint32_t SAMPLE_RATE = 16000;
 static const lv_color_t GRAY = LV_COLOR_MAKE(0x9E, 0x9E, 0x9E);
 static const lv_color_t CARD = LV_COLOR_MAKE(0x1C, 0x1C, 0x1E);
 
+// Bit n of `days` is weekday n (0 = Sunday, matching tm_wday).
+static const uint8_t DAYS_ONCE = 0x00, DAYS_WEEKDAYS = 0x3E, DAYS_WEEKENDS = 0x41, DAYS_DAILY = 0x7F;
+
 struct Alarm {
     uint8_t hour;  // 0-23, local time
     uint8_t minute;
     uint8_t enabled;
+    uint8_t days;  // repeat days; DAYS_ONCE rings at the next occurrence, then disables itself
 };
 
 static Alarm alarms[MAX_ALARMS];
@@ -24,6 +28,8 @@ static Preferences prefs;
 static lv_obj_t *home_screen;
 static lv_obj_t *list_screen, *list_cont, *add_btn;
 static lv_obj_t *edit_screen, *edit_title, *hour_roller, *minute_roller, *ampm_roller, *delete_btn;
+static lv_obj_t *day_buttons[7], *days_label;
+static uint8_t edit_days;
 static lv_obj_t *ring_screen, *ring_time_label, *ring_ampm_label;
 static int editing = -1;  // index of the alarm in the editor, -1 for a new alarm
 
@@ -45,10 +51,47 @@ static void save_alarms()
         }
     }
     if (alarm_count) {
-        prefs.putBytes("alarms", alarms, alarm_count * sizeof(Alarm));
+        prefs.putBytes("alarms2", alarms, alarm_count * sizeof(Alarm));
     } else {
+        prefs.remove("alarms2");
+    }
+}
+
+static void load_alarms()
+{
+    if (prefs.isKey("alarms2")) {
+        alarm_count = min(prefs.getBytesLength("alarms2") / sizeof(Alarm), (size_t)MAX_ALARMS);
+        prefs.getBytes("alarms2", alarms, alarm_count * sizeof(Alarm));
+    } else if (prefs.isKey("alarms")) {
+        // Alarms saved before repeat days existed ({hour, minute, enabled}) always rang daily.
+        uint8_t old[MAX_ALARMS][3];
+        alarm_count = min(prefs.getBytesLength("alarms") / sizeof(old[0]), (size_t)MAX_ALARMS);
+        prefs.getBytes("alarms", old, alarm_count * sizeof(old[0]));
+        for (int i = 0; i < alarm_count; i++) {
+            alarms[i] = {old[i][0], old[i][1], old[i][2], DAYS_DAILY};
+        }
+        save_alarms();
         prefs.remove("alarms");
     }
+}
+
+static const char *days_summary(uint8_t days)
+{
+    static const char *names[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    static char buf[32];
+    switch (days) {
+    case DAYS_ONCE: return "Once";
+    case DAYS_DAILY: return "Every day";
+    case DAYS_WEEKDAYS: return "Weekdays";
+    case DAYS_WEEKENDS: return "Weekends";
+    }
+    char *p = buf;
+    for (int d = 0; d < 7; d++) {
+        if (days & (1 << d)) {
+            p += sprintf(p, p == buf ? "%s" : " %s", names[d]);
+        }
+    }
+    return buf;
 }
 
 static int hour12(uint8_t hour)
@@ -198,8 +241,14 @@ void alarms_tick()
         return;
     }
     for (int i = 0; i < alarm_count; i++) {
-        if (alarms[i].enabled && alarms[i].hour == t.tm_hour && alarms[i].minute == t.tm_min) {
-            start_ringing(alarms[i].hour, alarms[i].minute);
+        Alarm &a = alarms[i];
+        if (a.enabled && a.hour == t.tm_hour && a.minute == t.tm_min && (a.days == DAYS_ONCE || a.days & (1 << t.tm_wday))) {
+            start_ringing(a.hour, a.minute);
+            if (a.days == DAYS_ONCE) {
+                a.enabled = 0;
+                save_alarms();  // re-sorts, so `a` is not used after this
+                rebuild_list();
+            }
             return;
         }
     }
@@ -212,6 +261,30 @@ bool alarms_ringing()
 
 // ---------- Editor ----------
 
+static void set_edit_days(uint8_t days)
+{
+    edit_days = days;
+    for (int d = 0; d < 7; d++) {
+        if (days & (1 << d)) {
+            lv_obj_add_state(day_buttons[d], LV_STATE_CHECKED);
+        } else {
+            lv_obj_remove_state(day_buttons[d], LV_STATE_CHECKED);
+        }
+    }
+    lv_label_set_text(days_label, days_summary(days));
+}
+
+static void day_toggled_cb(lv_event_t *e)
+{
+    int day = (int)(intptr_t)lv_event_get_user_data(e);
+    set_edit_days(edit_days ^ (1 << day));
+}
+
+static void days_preset_cb(lv_event_t *e)
+{
+    set_edit_days((uint8_t)(intptr_t)lv_event_get_user_data(e));
+}
+
 static void open_editor(int index)
 {
     editing = index;
@@ -220,6 +293,7 @@ static void open_editor(int index)
     lv_roller_set_selected(hour_roller, hour % 12, LV_ANIM_OFF);
     lv_roller_set_selected(minute_roller, minute, LV_ANIM_OFF);
     lv_roller_set_selected(ampm_roller, hour >= 12, LV_ANIM_OFF);
+    set_edit_days(index < 0 ? DAYS_ONCE : alarms[index].days);
     lv_label_set_text(edit_title, index < 0 ? "New alarm" : "Edit alarm");
     if (index < 0) {
         lv_obj_add_flag(delete_btn, LV_OBJ_FLAG_HIDDEN);
@@ -241,6 +315,7 @@ static void editor_save_cb(lv_event_t *)
     alarms[index].hour = lv_roller_get_selected(hour_roller) + 12 * lv_roller_get_selected(ampm_roller);
     alarms[index].minute = lv_roller_get_selected(minute_roller);
     alarms[index].enabled = 1;
+    alarms[index].days = edit_days;
     save_alarms();
     close_editor();
 }
@@ -265,7 +340,7 @@ static lv_obj_t *make_roller(lv_obj_t *parent, const char *options, lv_roller_mo
     lv_obj_t *roller = lv_roller_create(parent);
     lv_roller_set_options(roller, options, mode);
     lv_obj_set_width(roller, 110);
-    lv_obj_set_style_text_font(roller, &lv_font_montserrat_40, 0);
+    lv_obj_set_style_text_font(roller, &lv_font_montserrat_36, 0);
     lv_roller_set_visible_row_count(roller, 3);  // after the font, which sets the row height
     lv_obj_set_style_text_color(roller, GRAY, 0);
     lv_obj_set_style_bg_opa(roller, LV_OPA_TRANSP, 0);
@@ -301,17 +376,69 @@ static void build_editor()
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(row, 8, 0);
-    lv_obj_align(row, LV_ALIGN_CENTER, 0, -20);
+    lv_obj_align(row, LV_ALIGN_TOP_MID, 0, 84);
 
     hour_roller = make_roller(row, hours, LV_ROLLER_MODE_INFINITE);
-    lv_obj_t *colon = make_label(row, ":", &lv_font_montserrat_40, lv_color_white());
+    lv_obj_t *colon = make_label(row, ":", &lv_font_montserrat_36, lv_color_white());
     LV_UNUSED(colon);
     minute_roller = make_roller(row, minutes, LV_ROLLER_MODE_INFINITE);
     ampm_roller = make_roller(row, "AM\nPM", LV_ROLLER_MODE_NORMAL);
 
+    // Repeat days: S M T W T F S toggles, a summary, and presets.
+    lv_obj_t *days_row = lv_obj_create(edit_screen);
+    lv_obj_remove_style_all(days_row);
+    lv_obj_set_size(days_row, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(days_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(days_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(days_row, 6, 0);
+    lv_obj_align(days_row, LV_ALIGN_TOP_MID, 0, 262);  // below the rollers
+    static const char *letters[7] = {"S", "M", "T", "W", "T", "F", "S"};
+    for (int d = 0; d < 7; d++) {
+        lv_obj_t *btn = lv_button_create(days_row);
+        lv_obj_set_size(btn, 46, 46);
+        lv_obj_set_style_radius(btn, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_shadow_width(btn, 0, 0);
+        lv_obj_set_style_bg_color(btn, CARD, 0);
+        lv_obj_set_style_text_color(btn, lv_color_white(), 0);
+        lv_obj_set_style_bg_color(btn, lv_palette_main(LV_PALETTE_ORANGE), LV_STATE_CHECKED);
+        lv_obj_set_style_text_color(btn, lv_color_black(), LV_STATE_CHECKED);
+        lv_obj_t *letter = lv_label_create(btn);  // inherits the button's state-dependent text color
+        lv_label_set_text(letter, letters[d]);
+        lv_obj_set_style_text_font(letter, &lv_font_montserrat_24, 0);
+        lv_obj_center(letter);
+        lv_obj_add_event_cb(btn, day_toggled_cb, LV_EVENT_CLICKED, (void *)(intptr_t)d);
+        day_buttons[d] = btn;
+    }
+
+    days_label = make_label(edit_screen, "", &lv_font_montserrat_20, GRAY);
+    lv_obj_align(days_label, LV_ALIGN_TOP_MID, 0, 316);
+
+    lv_obj_t *presets = lv_obj_create(edit_screen);
+    lv_obj_remove_style_all(presets);
+    lv_obj_set_size(presets, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(presets, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(presets, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(presets, 6, 0);
+    lv_obj_align(presets, LV_ALIGN_TOP_MID, 0, 348);
+    static const struct { const char *name; uint8_t days; } preset_list[] = {
+        {"Weekdays", DAYS_WEEKDAYS}, {"Weekends", DAYS_WEEKENDS}, {"Daily", DAYS_DAILY},
+    };
+    for (const auto &preset : preset_list) {
+        lv_obj_t *chip = lv_button_create(presets);
+        lv_obj_set_height(chip, 44);
+        lv_obj_set_style_pad_hor(chip, 12, 0);
+        lv_obj_set_style_radius(chip, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_shadow_width(chip, 0, 0);
+        lv_obj_set_style_bg_opa(chip, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(chip, 2, 0);
+        lv_obj_set_style_border_color(chip, lv_color_hex(0x3A3A3C), 0);
+        lv_obj_center(make_label(chip, preset.name, &lv_font_montserrat_20, lv_palette_main(LV_PALETTE_ORANGE)));
+        lv_obj_add_event_cb(chip, days_preset_cb, LV_EVENT_CLICKED, (void *)(intptr_t)preset.days);
+    }
+
     delete_btn = pill_button(edit_screen, "Delete", CARD, lv_palette_main(LV_PALETTE_RED), editor_delete_cb);
-    lv_obj_set_width(delete_btn, 240);
-    lv_obj_align(delete_btn, LV_ALIGN_BOTTOM_MID, 0, -40);
+    lv_obj_set_size(delete_btn, 200, 60);
+    lv_obj_align(delete_btn, LV_ALIGN_BOTTOM_MID, 0, -20);
 }
 
 // ---------- List ----------
@@ -357,7 +484,7 @@ static void rebuild_list()
         lv_color_t color = alarms[i].enabled ? lv_color_white() : GRAY;
 
         lv_obj_t *row = lv_obj_create(list_cont);
-        lv_obj_set_size(row, LV_PCT(100), 100);
+        lv_obj_set_size(row, LV_PCT(100), 110);
         lv_obj_set_style_radius(row, 24, 0);
         lv_obj_set_style_bg_color(row, CARD, 0);
         lv_obj_set_style_border_width(row, 0, 0);
@@ -367,7 +494,11 @@ static void rebuild_list()
 
         lv_obj_t *time = make_label(row, "", &lv_font_montserrat_44, color);
         lv_label_set_text_fmt(time, "%d:%02d", hour12(alarms[i].hour), alarms[i].minute);
-        lv_obj_align(time, LV_ALIGN_LEFT_MID, 0, 0);
+        lv_obj_align(time, LV_ALIGN_LEFT_MID, 0, -12);
+        lv_obj_t *days = make_label(row, days_summary(alarms[i].days), &lv_font_montserrat_20, GRAY);
+        lv_label_set_long_mode(days, LV_LABEL_LONG_DOT);
+        lv_obj_set_size(days, 220, lv_font_get_line_height(&lv_font_montserrat_20));  // one line, "..." if longer
+        lv_obj_align(days, LV_ALIGN_LEFT_MID, 0, 26);
         lv_obj_t *ampm = make_label(row, alarms[i].hour < 12 ? "AM" : "PM", &lv_font_montserrat_24, GRAY);
         lv_obj_align_to(ampm, time, LV_ALIGN_OUT_RIGHT_BOTTOM, 6, -6);
 
@@ -425,10 +556,7 @@ void alarms_init(lv_obj_t *home)
 {
     home_screen = home;
     prefs.begin("watchapp");
-    if (prefs.isKey("alarms")) {
-        alarm_count = min(prefs.getBytesLength("alarms") / sizeof(Alarm), (size_t)MAX_ALARMS);
-        prefs.getBytes("alarms", alarms, alarm_count * sizeof(Alarm));
-    }
+    load_alarms();
 
     build_list();
     build_editor();
