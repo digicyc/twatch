@@ -143,28 +143,6 @@ static void handle_serial()
         }
         line[len] = '\0';
         len = 0;
-        // TEMP-DEBUG-BEGIN
-        {
-            extern bool alarms_debug(const char *);
-            lv_display_trigger_activity(NULL);
-            if (!strcmp(line, "GL")) { lv_screen_load(home_screen); lv_tileview_set_tile_by_index(tileview, 0, 1, LV_ANIM_OFF); continue; }
-            if (!strcmp(line, "GF")) { lv_screen_load(home_screen); lv_tileview_set_tile_by_index(tileview, 0, 0, LV_ANIM_OFF); continue; }
-            if (!strcmp(line, "S")) {
-                lv_refr_now(NULL);
-                lv_screen_capture_t cap;
-                if (lv_get_screen_capture(&cap)) {
-                    Serial.printf("SHOT %u %u %d\n", cap.width, cap.height, cap.rgb565_swapped);
-                    for (uint32_t y = 0; y < cap.height; y++) {
-                        for (uint32_t x = 0; x < cap.width; x++) Serial.printf("%04x", cap.pixels[y * cap.width + x]);
-                        Serial.print('\n');
-                    }
-                    Serial.println("END");
-                }
-                continue;
-            }
-            if (alarms_debug(line)) continue;
-        }
-        // TEMP-DEBUG-END
         if (line[0] != 'T') {
             continue;
         }
@@ -245,7 +223,9 @@ void setup()
 
     update_face(NULL);
     face_timer = lv_timer_create(update_face, 1000, NULL);
+    Serial.println("DBG before alarms_init");  // TEMP-DEBUG
     alarms_init(home_screen);
+    Serial.println("DBG after alarms_init");  // TEMP-DEBUG
 
     // PWR button (PMU) and BOOT button wake the screen.
     instance.onEvent(POWER_EVENT, [](const DeviceEvent &event, void *) {
@@ -263,10 +243,15 @@ void setup()
 
 void loop()
 {
+    static uint32_t dbg_last; bool dbg = millis() - dbg_last > 1000; if (dbg) { dbg_last = millis(); Serial.printf("DBG %lu a\n", dbg_last); }  // TEMP-DEBUG
     instance.loop();  // dispatches PMU and button events
+    if (dbg) Serial.println("DBG b");  // TEMP-DEBUG
     handle_serial();
     alarms_tick();
+    if (dbg) Serial.println("DBG c");  // TEMP-DEBUG
     update_screen_power();
+    if (dbg) Serial.println("DBG d");  // TEMP-DEBUG
     lv_timer_handler();
+    if (dbg) Serial.println("DBG e");  // TEMP-DEBUG
     delay(5);
 }

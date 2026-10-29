@@ -237,7 +237,6 @@ static void close_editor()
 
 static void editor_save_cb(lv_event_t *)
 {
-    Serial.println("TEMP-DEBUG editor save");  // TEMP-DEBUG
     int index = editing < 0 ? alarm_count++ : editing;
     alarms[index].hour = lv_roller_get_selected(hour_roller) + 12 * lv_roller_get_selected(ampm_roller);
     alarms[index].minute = lv_roller_get_selected(minute_roller);
@@ -326,7 +325,6 @@ static void row_switch_cb(lv_event_t *e)
 {
     int index = (int)(intptr_t)lv_event_get_user_data(e);
     alarms[index].enabled = lv_obj_has_state(lv_event_get_target_obj(e), LV_STATE_CHECKED);
-    Serial.printf("TEMP-DEBUG switch %d -> %d\n", index, alarms[index].enabled);  // TEMP-DEBUG
     save_alarms();
     rebuild_list();
 }
@@ -445,26 +443,3 @@ void alarms_open()
 {
     lv_screen_load_anim(list_screen, LV_SCREEN_LOAD_ANIM_MOVE_LEFT, 200, 0, false);
 }
-// TEMP-DEBUG-BEGIN
-bool alarms_debug(const char *cmd)
-{
-    if (!strcmp(cmd, "GA")) { lv_screen_load(list_screen); return true; }
-    if (!strcmp(cmd, "GE")) { open_editor(-1); return true; }
-    if (!strcmp(cmd, "GE0")) { open_editor(0); return true; }
-    if (!strcmp(cmd, "AN")) {
-        time_t now = time(NULL) + 60; struct tm t; localtime_r(&now, &t);
-        alarms[alarm_count++] = {(uint8_t)t.tm_hour, (uint8_t)t.tm_min, 1};
-        save_alarms(); rebuild_list();
-        Serial.printf("Added alarm %02d:%02d\n", t.tm_hour, t.tm_min); return true;
-    }
-    if (!strcmp(cmd, "AD")) {  // add a disabled 6:45 PM and enabled 7:00 AM for list preview
-        alarms[alarm_count++] = {18, 45, 0}; alarms[alarm_count++] = {7, 0, 1};
-        save_alarms(); rebuild_list(); return true;
-    }
-    if (!strcmp(cmd, "AC")) { alarm_count = 0; save_alarms(); rebuild_list(); return true; }
-    if (!strcmp(cmd, "AL")) { for (int i = 0; i < alarm_count; i++) Serial.printf("alarm %d %02d:%02d en=%d\n", i, alarms[i].hour, alarms[i].minute, alarms[i].enabled); return true; }
-    if (!strcmp(cmd, "XS")) { stop_cb(NULL); return true; }
-    if (!strcmp(cmd, "XZ")) { snooze_cb(NULL); Serial.printf("snooze_until=%ld now=%ld\n", (long)snooze_until, (long)time(NULL)); return true; }
-    return false;
-}
-// TEMP-DEBUG-END
