@@ -379,7 +379,7 @@ static void update_screen()
 
     bool syncing = wifi_on && connected() && !last_sync;
     if (last_sync || syncing) {
-        set_text(sync_label, syncing ? "Syncing..." : ("Synced " + format_sync_time(last_sync)).c_str());
+        set_text(sync_label, syncing ? "Waiting..." : format_sync_time(last_sync).c_str());
         lv_obj_remove_flag(sync_row, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(sync_row, LV_OBJ_FLAG_HIDDEN);
@@ -465,7 +465,7 @@ static void build_screen()
 
     // When the clock was last set from internet time.
     sync_row = make_row(cont, 64);
-    make_label(sync_row, "Internet time", &lv_font_montserrat_20, lv_color_white());
+    make_label(sync_row, "Time synced", &lv_font_montserrat_20, lv_color_white());
     lv_obj_align(lv_obj_get_child(sync_row, 0), LV_ALIGN_LEFT_MID, 0, 0);
     sync_label = make_label(sync_row, "", &lv_font_montserrat_18, GRAY);
     lv_obj_align(sync_label, LV_ALIGN_RIGHT_MID, 0, 0);

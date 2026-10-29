@@ -65,7 +65,7 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
   password, network not found, or timed out) and goes back to the saved network. While connected,
   the watch face shows a green Wi-Fi icon at the top left whose lit arcs show the signal strength.
   Connecting also sets the clock from internet time (NTP), and it re-syncs every hour while
-  connected.
+  connected; the **Time synced** row shows when that last happened.
 
 If uploading fails or the USB port keeps reconnecting, enter download mode: hold **BOOT**,
 press **RST**, release **BOOT**, upload, then press **RST** to run.
