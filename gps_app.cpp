@@ -43,6 +43,16 @@ GpsStatus gps_status()
     return s;
 }
 
+bool gps_location(double &lat, double &lon)
+{
+    if (!has_fix()) {
+        return false;
+    }
+    lat = instance.gps.location.lat();
+    lon = instance.gps.location.lng();
+    return true;
+}
+
 void gps_tick()
 {
     GPS &gps = instance.gps;

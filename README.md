@@ -43,6 +43,19 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
   open them and text files to view their first 2 KB. Cards must be FAT32; if the card can't be read,
   **Format card** erases it and formats it FAT32. Inserting or removing the card while the app is
   open remounts it.
+- **Map** shows offline map tiles from the SD card with your GPS position as a blue dot. Drag to
+  pan, **+**/**−** step through the zoom levels on the card, and the arrow button re-centers on
+  you and follows (orange while following). Tiles are standard 256 px web map tiles at
+  `/maps/<zoom>/<x>/<y>.png` (or baseline `.jpg`). `tools/download_map_tiles.py` downloads an area
+  into that layout from a source whose terms allow offline use, such as the public-domain USGS Topo
+  map (US only, no key): `python3 tools/download_map_tiles.py --center LAT,LON --radius-km 10
+  --zoom 10-16 --url
+  'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}'`
+  (about 2,800 tiles, 31 MB). Free plans of MapTiler and Thunderforest forbid bulk downloads, and
+  the tool refuses tile.openstreetmap.org, which forbids them too. Copy the `maps` folder to the
+  root of the card from a computer. Tiles fill in one at a time (about 0.1 s each) the first time
+  they're shown, and the next zoom level in and out is prepared in the background, so zooming is
+  usually immediate.
 
 If uploading fails or the USB port keeps reconnecting, enter download mode: hold **BOOT**,
 press **RST**, release **BOOT**, upload, then press **RST** to run.

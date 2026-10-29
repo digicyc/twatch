@@ -1,5 +1,5 @@
 // WatchApp: watch face for the LilyGo T-Watch Ultra. Swipe up for apps (Alarms, Messages, GPS,
-// SD Card).
+// Map, SD Card).
 //
 // The RTC keeps UTC. Set it from the host with `make settime`, which sends "T<unix seconds>\n"
 // over USB serial.
@@ -8,6 +8,7 @@
 #include <sys/time.h>
 #include "alarms.h"
 #include "gps_app.h"
+#include "map_app.h"
 #include "messages.h"
 #include "messenger.h"
 #include "sdcard_app.h"
@@ -124,25 +125,25 @@ static void show_face()
     }
 }
 
-// Adds a round icon button with a caption to the launcher grid.
+// Adds a round icon button with a caption to the launcher grid (three per row).
 static void add_app(lv_obj_t *grid, const char *symbol, const char *name, lv_color_t color, lv_event_cb_t cb)
 {
     lv_obj_t *item = lv_obj_create(grid);
     lv_obj_remove_style_all(item);
-    lv_obj_set_size(item, 150, LV_SIZE_CONTENT);
+    lv_obj_set_size(item, 130, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(item, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(item, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(item, 12, 0);
+    lv_obj_set_style_pad_row(item, 10, 0);
 
     lv_obj_t *btn = lv_button_create(item);
-    lv_obj_set_size(btn, 120, 120);
+    lv_obj_set_size(btn, 104, 104);
     lv_obj_set_style_radius(btn, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(btn, color, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
     lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *icon = lv_label_create(btn);
     lv_label_set_text(icon, symbol);
-    lv_obj_set_style_text_font(icon, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_font(icon, &lv_font_montserrat_42, 0);
     lv_obj_set_style_text_color(icon, lv_color_black(), 0);
     lv_obj_center(icon);
 
@@ -163,7 +164,7 @@ static void build_launcher(lv_obj_t *page)
     lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(grid, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_row(grid, 30, 0);
-    lv_obj_align(grid, LV_ALIGN_TOP_MID, 0, 120);
+    lv_obj_align(grid, LV_ALIGN_TOP_MID, 0, 110);
 
     add_app(grid, LV_SYMBOL_BELL, "Alarms", lv_palette_main(LV_PALETTE_ORANGE), [](lv_event_t *) {
         alarms_open();
@@ -173,6 +174,9 @@ static void build_launcher(lv_obj_t *page)
     });
     add_app(grid, LV_SYMBOL_GPS, "GPS", lv_palette_main(LV_PALETTE_GREEN), [](lv_event_t *) {
         gps_open();
+    });
+    add_app(grid, LV_SYMBOL_IMAGE, "Map", lv_palette_main(LV_PALETTE_TEAL), [](lv_event_t *) {
+        map_open();
     });
     add_app(grid, LV_SYMBOL_SD_CARD, "SD Card", lv_palette_main(LV_PALETTE_DEEP_PURPLE), [](lv_event_t *) {
         sdcard_open();
@@ -289,6 +293,7 @@ void setup()
     alarms_init(home_screen);
     gps_init(home_screen);
     sdcard_init(home_screen);
+    map_init(home_screen);
     if (!messenger_init()) {
         Serial.println("LoRa radio failed to start");
     }

@@ -359,43 +359,6 @@ static void build_reply()
 
 // ---------- Compose ----------
 
-// A compact QWERTY sized for the 410 px screen. Widths are in units of 20 per row; letter keys are 2.
-// " " entries with KB_GAP are hidden spacers that indent the middle row by half a key.
-static const int KB_HEIGHT = 236;
-#define KB_CTRL(x) ((lv_buttonmatrix_ctrl_t)(x))  // lv_buttonmatrix_ctrl_t is an enum; C++ won't OR it implicitly
-static const lv_buttonmatrix_ctrl_t K = KB_CTRL(2);
-static const lv_buttonmatrix_ctrl_t KB_GAP = KB_CTRL(LV_BUTTONMATRIX_CTRL_HIDDEN | 1);
-static const lv_buttonmatrix_ctrl_t KB_FN = KB_CTRL(LV_KEYBOARD_CTRL_BUTTON_FLAGS | 3);  // mode keys and send
-static const lv_buttonmatrix_ctrl_t KB_BKSP = KB_CTRL(LV_BUTTONMATRIX_CTRL_CHECKED | 3);
-static const lv_buttonmatrix_ctrl_t KB_SPACE = KB_CTRL(10);
-
-static const char *const KB_LOWER[] = {
-    "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "\n",
-    " ", "a", "s", "d", "f", "g", "h", "j", "k", "l", " ", "\n",
-    LV_SYMBOL_UP, "z", "x", "c", "v", "b", "n", "m", LV_SYMBOL_BACKSPACE, "\n",
-    "1#", ",", " ", ".", LV_SYMBOL_OK, ""};
-static const char *const KB_UPPER[] = {
-    "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "\n",
-    " ", "A", "S", "D", "F", "G", "H", "J", "K", "L", " ", "\n",
-    LV_SYMBOL_UP, "Z", "X", "C", "V", "B", "N", "M", LV_SYMBOL_BACKSPACE, "\n",
-    "1#", ",", " ", ".", LV_SYMBOL_OK, ""};
-static const lv_buttonmatrix_ctrl_t KB_TEXT_CTRL[] = {
-    K, K, K, K, K, K, K, K, K, K,
-    KB_GAP, K, K, K, K, K, K, K, K, K, KB_GAP,
-    KB_FN, K, K, K, K, K, K, K, KB_BKSP,
-    KB_FN, K, KB_SPACE, K, KB_FN};
-
-static const char *const KB_SPECIAL[] = {
-    "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "\n",
-    "@", "#", "$", "&", "-", "+", "(", ")", "/", "?", "\n",
-    "'", "\"", ":", ";", "!", "*", "=", "%", LV_SYMBOL_BACKSPACE, "\n",
-    "abc", ",", " ", ".", LV_SYMBOL_OK, ""};
-static const lv_buttonmatrix_ctrl_t KB_SPECIAL_CTRL[] = {
-    K, K, K, K, K, K, K, K, K, K,
-    K, K, K, K, K, K, K, K, K, K,
-    K, K, K, K, K, K, K, K, KB_CTRL(LV_BUTTONMATRIX_CTRL_CHECKED | 4),
-    KB_FN, K, KB_SPACE, K, KB_FN};
-
 static void compose_close()
 {
     lv_screen_load_anim(editing_name ? list_screen : chat_screen, LV_SCREEN_LOAD_ANIM_MOVE_BOTTOM, 200, 0, false);
@@ -430,23 +393,6 @@ static void compose_send_cb(lv_event_t *)
     compose_close();
 }
 
-// Replaces LVGL's key handler to add a shift key (LV_SYMBOL_UP) that applies to one letter, like a
-// phone keyboard. Everything else is LVGL's default handling.
-static void keyboard_key_cb(lv_event_t *e)
-{
-    lv_obj_t *kb = lv_event_get_target_obj(e);
-    const char *key = lv_buttonmatrix_get_button_text(kb, lv_buttonmatrix_get_selected_button(kb));
-    bool upper = lv_keyboard_get_mode(kb) == LV_KEYBOARD_MODE_TEXT_UPPER;
-    if (key && strcmp(key, LV_SYMBOL_UP) == 0) {
-        lv_keyboard_set_mode(kb, upper ? LV_KEYBOARD_MODE_TEXT_LOWER : LV_KEYBOARD_MODE_TEXT_UPPER);
-        return;
-    }
-    lv_keyboard_def_event_cb(e);
-    if (upper && key && key[0] >= 'A' && key[0] <= 'Z' && !key[1]) {
-        lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_TEXT_LOWER);
-    }
-}
-
 // Shows the compose screen with the keyboard sliding up. Shift starts on for empty text.
 static void compose_open(const char *title, const char *placeholder, const char *text, uint32_t max_length)
 {
@@ -454,17 +400,8 @@ static void compose_open(const char *title, const char *placeholder, const char 
     lv_textarea_set_placeholder_text(compose_ta, placeholder);
     lv_textarea_set_max_length(compose_ta, max_length);
     lv_textarea_set_text(compose_ta, text);
-    lv_keyboard_set_mode(compose_kb, text[0] ? LV_KEYBOARD_MODE_TEXT_LOWER : LV_KEYBOARD_MODE_TEXT_UPPER);
     lv_screen_load_anim(compose_screen, LV_SCREEN_LOAD_ANIM_FADE_IN, 150, 0, false);
-
-    lv_anim_t a;
-    lv_anim_init(&a);
-    lv_anim_set_var(&a, compose_kb);
-    lv_anim_set_values(&a, KB_HEIGHT, 0);
-    lv_anim_set_duration(&a, 250);
-    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
-    lv_anim_set_exec_cb(&a, [](void *kb, int32_t y) { lv_obj_set_style_translate_y((lv_obj_t *)kb, y, 0); });
-    lv_anim_start(&a);
+    keyboard_slide_up(compose_kb, !text[0]);
 }
 
 static void compose_open_cb(lv_event_t *)
@@ -503,28 +440,7 @@ static void build_compose()
     lv_obj_set_style_border_width(compose_ta, 0, LV_STATE_ANY);
     lv_obj_set_style_text_color(compose_ta, GRAY, LV_PART_TEXTAREA_PLACEHOLDER);
 
-    compose_kb = lv_keyboard_create(compose_screen);
-    lv_obj_set_size(compose_kb, LV_PCT(100), KB_HEIGHT);
-    lv_obj_align(compose_kb, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_keyboard_set_map(compose_kb, LV_KEYBOARD_MODE_TEXT_LOWER, KB_LOWER, KB_TEXT_CTRL);
-    lv_keyboard_set_map(compose_kb, LV_KEYBOARD_MODE_TEXT_UPPER, KB_UPPER, KB_TEXT_CTRL);
-    lv_keyboard_set_map(compose_kb, LV_KEYBOARD_MODE_SPECIAL, KB_SPECIAL, KB_SPECIAL_CTRL);
-    lv_keyboard_set_textarea(compose_kb, compose_ta);
-    lv_obj_set_style_bg_color(compose_kb, lv_color_black(), 0);
-    lv_obj_set_style_border_width(compose_kb, 0, 0);
-    lv_obj_set_style_pad_hor(compose_kb, 6, 0);
-    lv_obj_set_style_pad_top(compose_kb, 6, 0);
-    lv_obj_set_style_pad_bottom(compose_kb, 14, 0);  // clear of the screen's rounded corners
-    lv_obj_set_style_pad_gap(compose_kb, 5, 0);
-    lv_obj_set_style_bg_color(compose_kb, CARD, LV_PART_ITEMS);
-    lv_obj_set_style_bg_color(compose_kb, lv_color_hex(0x3A3A3C), LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_bg_color(compose_kb, ORANGE, LV_PART_ITEMS | LV_STATE_PRESSED);
-    lv_obj_set_style_text_color(compose_kb, lv_color_white(), LV_PART_ITEMS);
-    lv_obj_set_style_text_font(compose_kb, &lv_font_montserrat_24, LV_PART_ITEMS);
-    lv_obj_set_style_radius(compose_kb, 10, LV_PART_ITEMS);
-    lv_obj_set_style_shadow_width(compose_kb, 0, LV_PART_ITEMS);
-    lv_obj_remove_event_cb(compose_kb, lv_keyboard_def_event_cb);
-    lv_obj_add_event_cb(compose_kb, keyboard_key_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    compose_kb = make_keyboard(compose_screen, compose_ta);
     lv_obj_add_event_cb(compose_kb, compose_send_cb, LV_EVENT_READY, NULL);
 }
 

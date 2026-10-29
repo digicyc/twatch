@@ -17,3 +17,6 @@ struct GpsStatus {
     int satellites;  // used in the fix, or in view while searching
 };
 GpsStatus gps_status();
+
+// The current position, if there is a fix.
+bool gps_location(double &lat, double &lon);
