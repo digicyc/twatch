@@ -170,22 +170,6 @@ static void advert_cb(lv_event_t *)
     advertise();
 }
 
-static lv_obj_t *make_scroll_column(lv_obj_t *screen)
-{
-    lv_obj_t *cont = lv_obj_create(screen);
-    lv_obj_remove_style_all(cont);
-    lv_obj_set_size(cont, LV_PCT(100), 502 - 104);
-    lv_obj_align(cont, LV_ALIGN_TOP_MID, 0, 104);
-    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_hor(cont, 24, 0);
-    lv_obj_set_style_pad_bottom(cont, 24, 0);
-    lv_obj_set_style_pad_row(cont, 12, 0);
-    lv_obj_set_scroll_dir(cont, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(cont, LV_SCROLLBAR_MODE_OFF);
-    return cont;
-}
-
 static void build_list()
 {
     list_screen = make_screen();

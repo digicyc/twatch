@@ -10,3 +10,6 @@ lv_obj_t *make_label(lv_obj_t *parent, const char *text, const lv_font_t *font, 
 
 // A text-only button in the top left or top right corner of a screen.
 lv_obj_t *header_button(lv_obj_t *parent, const char *text, lv_align_t align, lv_event_cb_t cb);
+
+// A vertically scrolling flex column filling the screen below the header.
+lv_obj_t *make_scroll_column(lv_obj_t *screen);
