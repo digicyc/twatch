@@ -184,48 +184,46 @@ void setup()
     tileview = lv_tileview_create(home_screen);
     lv_obj_set_style_bg_opa(tileview, LV_OPA_TRANSP, 0);
     lv_obj_set_scrollbar_mode(tileview, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_t *screen = lv_tileview_add_tile(tileview, 0, 0, LV_DIR_BOTTOM);
+    lv_obj_t *face = lv_tileview_add_tile(tileview, 0, 0, LV_DIR_BOTTOM);
     build_launcher(lv_tileview_add_tile(tileview, 0, 1, LV_DIR_TOP));
 
-    lv_obj_t *swipe_hint = lv_label_create(screen);
+    lv_obj_t *swipe_hint = lv_label_create(face);
     lv_label_set_text(swipe_hint, LV_SYMBOL_UP);
     lv_obj_set_style_text_color(swipe_hint, lv_color_hex(0x5A5A5A), 0);
     lv_obj_align(swipe_hint, LV_ALIGN_BOTTOM_MID, 0, -20);
 
-    battery_label = lv_label_create(screen);
+    battery_label = lv_label_create(face);
     lv_obj_set_style_text_font(battery_label, &lv_font_montserrat_24, 0);
     lv_obj_align(battery_label, LV_ALIGN_TOP_MID, 0, 40);
 
-    battery_bar = lv_bar_create(screen);
+    battery_bar = lv_bar_create(face);
     lv_obj_set_size(battery_bar, 120, 8);
     lv_bar_set_range(battery_bar, 0, 100);
     lv_obj_set_style_bg_color(battery_bar, lv_color_hex(0x303030), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(battery_bar, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_align(battery_bar, LV_ALIGN_TOP_MID, 0, 78);
 
-    time_label = lv_label_create(screen);
+    time_label = lv_label_create(face);
     lv_obj_set_style_text_font(time_label, &font_alibaba_100, 0);
     lv_obj_align(time_label, LV_ALIGN_CENTER, -20, -30);
 
-    ampm_label = lv_label_create(screen);
+    ampm_label = lv_label_create(face);
     lv_obj_set_style_text_font(ampm_label, &lv_font_montserrat_28, 0);
     lv_obj_set_style_text_color(ampm_label, lv_color_hex(0x9E9E9E), 0);
 
-    weekday_label = lv_label_create(screen);
+    weekday_label = lv_label_create(face);
     lv_obj_set_style_text_font(weekday_label, &lv_font_montserrat_36, 0);
     lv_obj_set_style_text_color(weekday_label, lv_palette_main(LV_PALETTE_ORANGE), 0);
     lv_obj_align(weekday_label, LV_ALIGN_CENTER, 0, 70);
 
-    date_label = lv_label_create(screen);
+    date_label = lv_label_create(face);
     lv_obj_set_style_text_font(date_label, &lv_font_montserrat_28, 0);
     lv_obj_set_style_text_color(date_label, lv_color_hex(0x9E9E9E), 0);
     lv_obj_align(date_label, LV_ALIGN_CENTER, 0, 118);
 
     update_face(NULL);
     face_timer = lv_timer_create(update_face, 1000, NULL);
-    Serial.println("DBG before alarms_init");  // TEMP-DEBUG
     alarms_init(home_screen);
-    Serial.println("DBG after alarms_init");  // TEMP-DEBUG
 
     // PWR button (PMU) and BOOT button wake the screen.
     instance.onEvent(POWER_EVENT, [](const DeviceEvent &event, void *) {
@@ -243,15 +241,10 @@ void setup()
 
 void loop()
 {
-    static uint32_t dbg_last; bool dbg = millis() - dbg_last > 1000; if (dbg) { dbg_last = millis(); Serial.printf("DBG %lu a\n", dbg_last); }  // TEMP-DEBUG
     instance.loop();  // dispatches PMU and button events
-    if (dbg) Serial.println("DBG b");  // TEMP-DEBUG
     handle_serial();
     alarms_tick();
-    if (dbg) Serial.println("DBG c");  // TEMP-DEBUG
     update_screen_power();
-    if (dbg) Serial.println("DBG d");  // TEMP-DEBUG
     lv_timer_handler();
-    if (dbg) Serial.println("DBG e");  // TEMP-DEBUG
     delay(5);
 }
