@@ -1,13 +1,15 @@
-// WatchApp: time, date, and battery watch face for the LilyGo T-Watch Ultra.
+// WatchApp: watch face for the LilyGo T-Watch Ultra. Swipe up for apps (Alarms).
 //
 // The RTC keeps UTC. Set it from the host with `make settime`, which sends "T<unix seconds>\n"
 // over USB serial.
 #include <LilyGoLib.h>
 #include <LV_Helper.h>
 #include <sys/time.h>
+#include "alarms.h"
 
 // POSIX rule for America/Denver (MST/MDT).
 static const char *TIME_ZONE = "MST7MDT,M3.2.0,M11.1.0";
+static const uint32_t SCREEN_TIMEOUT_MS = 10000;
 
 LV_FONT_DECLARE(font_alibaba_100);
 
@@ -17,6 +19,10 @@ static lv_obj_t *weekday_label;
 static lv_obj_t *date_label;
 static lv_obj_t *battery_label;
 static lv_obj_t *battery_bar;
+static lv_timer_t *face_timer;
+static lv_obj_t *home_screen;
+static lv_obj_t *tileview;
+static bool screen_on = true;
 
 static void update_face(lv_timer_t *)
 {
@@ -53,6 +59,75 @@ static void update_face(lv_timer_t *)
     lv_obj_set_style_bg_color(battery_bar, color, LV_PART_INDICATOR);
 }
 
+// Turns the display off after SCREEN_TIMEOUT_MS without input, returning to the watch face.
+// LVGL resets its inactivity time on touch; buttons and alarms reset it via
+// lv_display_trigger_activity().
+static void update_screen_power()
+{
+    bool idle = lv_display_get_inactive_time(NULL) > SCREEN_TIMEOUT_MS;
+    if (idle && screen_on) {
+        screen_on = false;
+        lv_timer_pause(face_timer);
+        instance.setBrightness(0);
+        instance.sleepDisplay();
+        lv_screen_load(home_screen);
+        lv_tileview_set_tile_by_index(tileview, 0, 0, LV_ANIM_OFF);
+    } else if (!idle && !screen_on) {
+        screen_on = true;
+        instance.wakeupDisplay();
+        update_face(NULL);
+        lv_timer_resume(face_timer);
+        lv_refr_now(NULL);
+        instance.setBrightness(DEVICE_MAX_BRIGHTNESS_LEVEL);
+    }
+}
+
+// Adds a round icon button with a caption to the launcher grid.
+static void add_app(lv_obj_t *grid, const char *symbol, const char *name, lv_color_t color, lv_event_cb_t cb)
+{
+    lv_obj_t *item = lv_obj_create(grid);
+    lv_obj_remove_style_all(item);
+    lv_obj_set_size(item, 150, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(item, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(item, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(item, 12, 0);
+
+    lv_obj_t *btn = lv_button_create(item);
+    lv_obj_set_size(btn, 120, 120);
+    lv_obj_set_style_radius(btn, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(btn, color, 0);
+    lv_obj_set_style_shadow_width(btn, 0, 0);
+    lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *icon = lv_label_create(btn);
+    lv_label_set_text(icon, symbol);
+    lv_obj_set_style_text_font(icon, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_color(icon, lv_color_black(), 0);
+    lv_obj_center(icon);
+
+    lv_obj_t *caption = lv_label_create(item);
+    lv_label_set_text(caption, name);
+}
+
+static void build_launcher(lv_obj_t *page)
+{
+    lv_obj_t *title = lv_label_create(page);
+    lv_label_set_text(title, "Apps");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_32, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 34);
+
+    lv_obj_t *grid = lv_obj_create(page);
+    lv_obj_remove_style_all(grid);
+    lv_obj_set_size(grid, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_flex_align(grid, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_row(grid, 30, 0);
+    lv_obj_align(grid, LV_ALIGN_TOP_MID, 0, 120);
+
+    add_app(grid, LV_SYMBOL_BELL, "Alarms", lv_palette_main(LV_PALETTE_ORANGE), [](lv_event_t *) {
+        alarms_open();
+    });
+}
+
 // Handles "T<unix seconds>" lines from `make settime`.
 static void handle_serial()
 {
@@ -68,6 +143,28 @@ static void handle_serial()
         }
         line[len] = '\0';
         len = 0;
+        // TEMP-DEBUG-BEGIN
+        {
+            extern bool alarms_debug(const char *);
+            lv_display_trigger_activity(NULL);
+            if (!strcmp(line, "GL")) { lv_screen_load(home_screen); lv_tileview_set_tile_by_index(tileview, 0, 1, LV_ANIM_OFF); continue; }
+            if (!strcmp(line, "GF")) { lv_screen_load(home_screen); lv_tileview_set_tile_by_index(tileview, 0, 0, LV_ANIM_OFF); continue; }
+            if (!strcmp(line, "S")) {
+                lv_refr_now(NULL);
+                lv_screen_capture_t cap;
+                if (lv_get_screen_capture(&cap)) {
+                    Serial.printf("SHOT %u %u %d\n", cap.width, cap.height, cap.rgb565_swapped);
+                    for (uint32_t y = 0; y < cap.height; y++) {
+                        for (uint32_t x = 0; x < cap.width; x++) Serial.printf("%04x", cap.pixels[y * cap.width + x]);
+                        Serial.print('\n');
+                    }
+                    Serial.println("END");
+                }
+                continue;
+            }
+            if (alarms_debug(line)) continue;
+        }
+        // TEMP-DEBUG-END
         if (line[0] != 'T') {
             continue;
         }
@@ -97,9 +194,25 @@ void setup()
 
     beginLvglHelper(instance);
 
-    lv_obj_t *screen = lv_screen_active();
-    lv_obj_set_style_bg_color(screen, lv_color_black(), 0);
-    lv_obj_set_style_text_color(screen, lv_color_white(), 0);
+    lv_display_t *display = lv_display_get_default();
+    lv_display_set_theme(display, lv_theme_default_init(display, lv_palette_main(LV_PALETTE_ORANGE),
+                         lv_palette_main(LV_PALETTE_GREY), true, &lv_font_montserrat_24));
+
+    home_screen = lv_screen_active();
+    lv_obj_set_style_bg_color(home_screen, lv_color_black(), 0);
+    lv_obj_set_style_text_color(home_screen, lv_color_white(), 0);
+
+    // Page 0 is the watch face; swipe up for page 1, the app launcher.
+    tileview = lv_tileview_create(home_screen);
+    lv_obj_set_style_bg_opa(tileview, LV_OPA_TRANSP, 0);
+    lv_obj_set_scrollbar_mode(tileview, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_t *screen = lv_tileview_add_tile(tileview, 0, 0, LV_DIR_BOTTOM);
+    build_launcher(lv_tileview_add_tile(tileview, 0, 1, LV_DIR_TOP));
+
+    lv_obj_t *swipe_hint = lv_label_create(screen);
+    lv_label_set_text(swipe_hint, LV_SYMBOL_UP);
+    lv_obj_set_style_text_color(swipe_hint, lv_color_hex(0x5A5A5A), 0);
+    lv_obj_align(swipe_hint, LV_ALIGN_BOTTOM_MID, 0, -20);
 
     battery_label = lv_label_create(screen);
     lv_obj_set_style_text_font(battery_label, &lv_font_montserrat_24, 0);
@@ -131,7 +244,18 @@ void setup()
     lv_obj_align(date_label, LV_ALIGN_CENTER, 0, 118);
 
     update_face(NULL);
-    lv_timer_create(update_face, 1000, NULL);
+    face_timer = lv_timer_create(update_face, 1000, NULL);
+    alarms_init(home_screen);
+
+    // PWR button (PMU) and BOOT button wake the screen.
+    instance.onEvent(POWER_EVENT, [](const DeviceEvent &event, void *) {
+        if (instance.getPMUEventType(event) == PMU_EVENT_KEY_CLICKED) {
+            lv_display_trigger_activity(NULL);
+        }
+    });
+    instance.onEvent(BUTTON_EVENT, [](const DeviceEvent &, void *) {
+        lv_display_trigger_activity(NULL);
+    });
 
     instance.setBrightness(DEVICE_MAX_BRIGHTNESS_LEVEL);
     Serial.println("WatchApp started");
@@ -139,7 +263,10 @@ void setup()
 
 void loop()
 {
+    instance.loop();  // dispatches PMU and button events
     handle_serial();
+    alarms_tick();
+    update_screen_power();
     lv_timer_handler();
     delay(5);
 }
