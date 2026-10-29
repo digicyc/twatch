@@ -9,7 +9,9 @@ static const char *TEST_FILE = "/watchapp-sdtest.bin";
 static const size_t TEST_BYTES = 256 * 1024;
 static const size_t VIEW_BYTES = 2048;  // shown from the start of a file
 static const int MAX_ENTRIES = 64;      // listed per folder
-static const uint32_t SD_SPI_HZ = 4000000;
+// LilyGoLib mounts at 4 MHz, but on the test card writes there failed with I/O errors in about 1 of 3
+// runs (always at the same spot), while 10 and 20 MHz passed 20 of 20 verified runs each.
+static const uint32_t SD_SPI_HZ = 20000000;
 static const lv_color_t ORANGE = LV_COLOR_MAKE(0xFF, 0x98, 0x00);  // lv_palette_main(LV_PALETTE_ORANGE)
 static const lv_color_t RED = LV_COLOR_MAKE(0xF4, 0x43, 0x36);     // lv_palette_main(LV_PALETTE_RED)
 static const lv_color_t GREEN = LV_COLOR_MAKE(0x4C, 0xAF, 0x50);   // lv_palette_main(LV_PALETTE_GREEN)
@@ -302,7 +304,7 @@ static void format_cb(lv_event_t *)
     SD.end();
     // format_if_empty formats only when there's no FAT volume, which is why the card is unreadable.
     bool ok = SD.begin(SD_CS, SPI, SD_SPI_HZ, "/sd", 5, true) && SD.cardType() != CARD_NONE;
-    instance.installSD();  // remount the way LilyGoLib does and update its online flag
+    instance.installSD(SD_SPI_HZ);  // remount the way LilyGoLib does and update its online flag
     shown_state = -1;
     update_status();
     lv_label_set_text(result_label, ok ? "Formatted as FAT32." : "Format failed.");
@@ -318,7 +320,7 @@ static void refresh_cb(lv_timer_t *)
     bool inserted = card_inserted();
     bool mounted = instance.getDeviceProbe() & HW_SD_ONLINE;
     if (inserted && !mounted && shown_state == CARD_MISSING) {
-        instance.installSD();
+        instance.installSD(SD_SPI_HZ);
     } else if (!inserted && mounted) {
         instance.uninstallSD();
     }
@@ -406,6 +408,10 @@ static void build_screens()
 void sdcard_init(lv_obj_t *home)
 {
     home_screen = home;
+    // Remount at SD_SPI_HZ; this also retries a card that wasn't ready when LilyGoLib mounted it.
+    if (card_inserted()) {
+        instance.installSD(SD_SPI_HZ);
+    }
     build_screens();
 }
 
@@ -413,63 +419,8 @@ void sdcard_open()
 {
     // A card that wasn't ready when LilyGoLib mounted it at boot gets another try.
     if (card_state() == CARD_UNREADABLE) {
-        instance.installSD();
+        instance.installSD(SD_SPI_HZ);
     }
     update_status();
     lv_screen_load_anim(screen, LV_SCREEN_LOAD_ANIM_MOVE_LEFT, 200, 0, false);
-}
-
-// TEMP-SELFTEST: serial-triggered check, removed after hardware testing.
-void sdcard_selftest()
-{
-    update_status();
-    Serial.printf("SELFTEST inserted=%d online=%d\n", card_inserted(), (int)((instance.getDeviceProbe() & HW_SD_ONLINE) != 0));
-    Serial.printf("SELFTEST status: %s\n", lv_label_get_text(status_label));
-    if (card_state() != CARD_MOUNTED) {
-        SD.end();
-        bool ok = SD.begin(SD_CS, SPI, SD_SPI_HZ, "/sd");
-        Serial.printf("SELFTEST retry begin=%d type=%d sectors=%u\n", ok, (int)SD.cardType(), (unsigned)SD.numSectors());
-        SD.end();
-        Serial.printf("SELFTEST installSD=%d\n", instance.installSD());
-        return;
-    }
-    {
-        errno = 0;
-        File w = SD.open("/dbg.txt", FILE_WRITE);
-        Serial.printf("SELFTEST open-w=%d errno=%d %s\n", (bool)w, errno, strerror(errno));
-        size_t n = w ? w.write((const uint8_t *)"abc", 3) : 0;
-        Serial.printf("SELFTEST write=%u errno=%d\n", (unsigned)n, errno);
-        if (w) w.close();
-        File r = SD.open("/dbg.txt");
-        Serial.printf("SELFTEST open-r=%d size=%u errno=%d %s\n", (bool)r, r ? (unsigned)r.size() : 0, errno, strerror(errno));
-        if (r) r.close();
-        errno = 0;
-        FILE *fp = fopen("/sd/dbg2.txt", "w");
-        Serial.printf("SELFTEST fopen-w=%p errno=%d %s\n", fp, errno, strerror(errno));
-        if (fp) { Serial.printf("SELFTEST fwrite=%u\n", (unsigned)fwrite("abc", 1, 3, fp)); Serial.printf("SELFTEST fclose=%d errno=%d\n", fclose(fp), errno); }
-        errno = 0;
-        fp = fopen("/sd/dbg2.txt", "r");
-        Serial.printf("SELFTEST fopen-r=%p errno=%d %s\n", fp, errno, strerror(errno));
-        if (fp) fclose(fp);
-        SD.remove("/dbg.txt");
-        SD.remove("/dbg2.txt");
-    }
-    for (const Entry &e : entries) {
-        Serial.printf("SELFTEST entry: %s %s %u\n", e.dir ? "DIR " : "FILE", e.name.c_str(), (unsigned)e.size);
-    }
-    test_cb(NULL);
-    Serial.printf("SELFTEST test: %s\n", lv_label_get_text(result_label));
-    File f = SD.open("/watchapp-hello.txt", FILE_WRITE);
-    f.print("Hello from the T-Watch Ultra\nLine two\n");
-    f.close();
-    rebuild_files();
-    for (size_t i = 0; i < entries.size(); i++) {
-        if (entries[i].name == "watchapp-hello.txt") {
-            open_viewer("/watchapp-hello.txt", entries[i].size);
-            Serial.printf("SELFTEST view: [%s]\n", lv_label_get_text(view_text));
-            lv_screen_load(screen);
-        }
-    }
-    Serial.printf("SELFTEST remove hello: %d\n", SD.remove("/watchapp-hello.txt"));
-    Serial.printf("SELFTEST done\n");
 }

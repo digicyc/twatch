@@ -194,11 +194,6 @@ static void handle_serial()
         }
         line[len] = '\0';
         len = 0;
-        if (strcmp(line, "SDTEST") == 0) {  // TEMP-SELFTEST
-            extern void sdcard_selftest();
-            sdcard_selftest();
-            continue;
-        }
         if (line[0] != 'T') {
             continue;
         }
