@@ -28,11 +28,11 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
   Public channel and a chat for each MeshCore companion that has advertised nearby, with unread
   counts. New messages buzz and wake the screen. Tap a chat to read it and the pencil button to
   reply: pick a quick reply, or **Type a message** for a slide-up keyboard (one-shot shift,
-  **1#** for numbers and symbols, ✓ to send). Direct messages show Sending / Sent / Delivered /
-  Failed. Tap the signal icon in the list to advertise this watch so others can add it. The
-  **This watch** card at the bottom of the list shows the name others see (TWatch-XXXX by
-  default); tap it to rename the watch, which also re-advertises it. Chats are saved on the FFat
-  partition.
+  **1#** for numbers and punctuation, then **#+=** for the rest of the symbols, ✓ to send). Direct
+  messages show Sending / Sent / Delivered / Failed. Tap the signal icon in the list to advertise
+  this watch so others can add it. The **This watch** card at the bottom of the list shows the
+  name others see (TWatch-XXXX by default); tap it to rename the watch, which also re-advertises
+  it. Chats are saved on the FFat partition.
 - **GPS** has an on/off switch (saved across reboots; off cuts the receiver's power to save
   battery), the current position, altitude, speed and HDOP, and a bar per satellite showing signal
   strength (green = used in the fix). While GPS is on, the watch face shows a satellite icon at the top
@@ -56,6 +56,12 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
   root of the card from a computer. Tiles fill in one at a time (about 0.1 s each) the first time
   they're shown, and the next zoom level in and out is prepared in the background, so zooming is
   usually immediate.
+- **Wi-Fi** has an on/off switch (off by default, saved across reboots), the connection status
+  with IP address and signal, and the nearby networks strongest first (tap ⟳ to scan again). Tap a
+  network to join it; secured ones ask for the password on the slide-up keyboard (the eye button
+  shows it). A network that joins becomes the saved network, which the watch reconnects to at
+  boot and whenever it's back in range; **Forget** removes it. A failed join says why (wrong
+  password, network not found, or timed out) and goes back to the saved network.
 
 If uploading fails or the USB port keeps reconnecting, enter download mode: hold **BOOT**,
 press **RST**, release **BOOT**, upload, then press **RST** to run.
