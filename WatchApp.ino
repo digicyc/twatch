@@ -1,4 +1,5 @@
-// WatchApp: watch face for the LilyGo T-Watch Ultra. Swipe up for apps (Alarms, Messages, GPS).
+// WatchApp: watch face for the LilyGo T-Watch Ultra. Swipe up for apps (Alarms, Messages, GPS,
+// SD Card).
 //
 // The RTC keeps UTC. Set it from the host with `make settime`, which sends "T<unix seconds>\n"
 // over USB serial.
@@ -9,6 +10,7 @@
 #include "gps_app.h"
 #include "messages.h"
 #include "messenger.h"
+#include "sdcard_app.h"
 
 // POSIX rule for America/Denver (MST/MDT).
 static const char *TIME_ZONE = "MST7MDT,M3.2.0,M11.1.0";
@@ -172,6 +174,9 @@ static void build_launcher(lv_obj_t *page)
     add_app(grid, LV_SYMBOL_GPS, "GPS", lv_palette_main(LV_PALETTE_GREEN), [](lv_event_t *) {
         gps_open();
     });
+    add_app(grid, LV_SYMBOL_SD_CARD, "SD Card", lv_palette_main(LV_PALETTE_DEEP_PURPLE), [](lv_event_t *) {
+        sdcard_open();
+    });
 }
 
 // Handles "T<unix seconds>" lines from `make settime`.
@@ -189,6 +194,11 @@ static void handle_serial()
         }
         line[len] = '\0';
         len = 0;
+        if (strcmp(line, "SDTEST") == 0) {  // TEMP-SELFTEST
+            extern void sdcard_selftest();
+            sdcard_selftest();
+            continue;
+        }
         if (line[0] != 'T') {
             continue;
         }
@@ -283,6 +293,7 @@ void setup()
     face_timer = lv_timer_create(update_face, 1000, NULL);
     alarms_init(home_screen);
     gps_init(home_screen);
+    sdcard_init(home_screen);
     if (!messenger_init()) {
         Serial.println("LoRa radio failed to start");
     }

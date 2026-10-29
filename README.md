@@ -38,6 +38,11 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
   strength (green = used in the fix). While GPS is on, the watch face shows a satellite icon at the top
   right: gray with the satellites in view while searching, green with the satellites used once it
   has a fix.
+- **SD Card** shows the card's size and free space, a **Test read & write** button (writes 256 KB,
+  reads it back, checks it, deletes it, and reports speeds), and a file browser: tap folders to
+  open them and text files to view their first 2 KB. Cards must be FAT32; if the card can't be read,
+  **Format card** erases it and formats it FAT32. Inserting or removing the card while the app is
+  open remounts it.
 
 If uploading fails or the USB port keeps reconnecting, enter download mode: hold **BOOT**,
 press **RST**, release **BOOT**, upload, then press **RST** to run.
