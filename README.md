@@ -34,7 +34,8 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
   messages show Sending / Sent / Delivered / Failed. Tap the signal icon in the list to advertise
   this watch so others can add it. The **This watch** card at the bottom of the list shows the
   name others see (TWatch-XXXX by default); tap it to rename the watch, which also re-advertises
-  it. Chats are saved on the FFat partition.
+  it. Chats are saved on the FFat partition. The watch runs MeshCore's companion radio firmware, so
+  its contacts, channels and radio settings are the ones the MeshCore phone app shows.
 - **GPS** has an on/off switch (saved across reboots; off cuts the receiver's power to save
   battery), the current position, altitude, speed and HDOP, and a bar per satellite showing signal
   strength (green = used in the fix). While GPS is on, the watch face shows a satellite icon at the top
@@ -67,6 +68,16 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
   the watch face shows a green Wi-Fi icon at the top left whose lit arcs show the signal strength.
   Connecting also sets the clock from internet time (NTP), and it re-syncs every hour while
   connected; the **Time synced** row shows when that last happened.
+
+- **Bluetooth** lets the MeshCore phone app use the watch as its radio, like any MeshCore
+  companion node. It has an on/off switch (on by default, saved across reboots) and shows the
+  status, the name the app lists (**MeshCore-** plus the watch name) and the six-digit PIN to
+  enter when pairing. In the app, tap Connect, choose the watch, and enter the PIN. Messages sent
+  from the phone to the Public channel or to a companion also appear in the watch's chats, and
+  messages received while the phone is away are queued for it (up to 16). Bluetooth uses about
+  75 KB of the internal RAM, so turn it off if you don't use the phone app. A rename on the watch
+  updates the Bluetooth name right away; a rename or PIN change from the app takes effect after a
+  reboot.
 
 If uploading fails or the USB port keeps reconnecting, enter download mode: hold **BOOT**,
 press **RST**, release **BOOT**, upload, then press **RST** to run.

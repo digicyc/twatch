@@ -13,7 +13,7 @@ BUILD ?= build
 MESH_FLAGS := -DRADIOLIB_STATIC_ONLY=1 -DRADIOLIB_GODMODE=1 \
 	-DLORA_FREQ=910.525 -DLORA_BW=62.5 -DLORA_SF=7 -DLORA_CR=5 -DLORA_TX_POWER=22 \
 	-DSX126X_DIO3_TCXO_VOLTAGE=1.8f -DSX126X_DIO2_AS_RF_SWITCH=true -DSX126X_CURRENT_LIMIT=140 \
-	-DSX126X_RX_BOOSTED_GAIN=1 -DMAX_CONTACTS=64 -DMAX_GROUP_CHANNELS=4
+	-DSX126X_RX_BOOSTED_GAIN=1 -DMAX_CONTACTS=64 -DMAX_GROUP_CHANNELS=8
 EXTRA_FLAGS ?=
 FQBN  := esp32:esp32:twatch_ultra:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=default,MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,PartitionScheme=app3M_fat9M_16MB,DebugLevel=none,LoopCore=1,EventsCore=1,EraseFlash=none,JTAGAdapter=default,Revision=$(strip $(RADIO))
 
@@ -21,7 +21,7 @@ FQBN  := esp32:esp32:twatch_ultra:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=def
 
 # Arduino libraries MeshCore needs beyond LilyGoLib-ThirdParty.
 deps:
-	arduino-cli lib install "Crypto@0.4.0" "base64@1.3.0"
+	arduino-cli lib install "Crypto@0.4.0" "base64@1.3.0" "RTClib@2.1.4" "CayenneLPP@1.6.1"
 
 build:
 	arduino-cli compile --fqbn '$(FQBN)' --build-path $(BUILD) \

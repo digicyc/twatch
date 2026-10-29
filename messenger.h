@@ -1,5 +1,6 @@
-// MeshCore-compatible LoRa messaging: identity, contacts, the Public channel, direct messages,
-// and per-chat message history stored on the FFat partition.
+// MeshCore LoRa messaging: the watch runs MeshCore's companion radio node, which the MeshCore phone
+// app can use over Bluetooth, and keeps per-chat message history on the FFat partition for the
+// Messages app.
 #pragma once
 #include <stdint.h>
 
@@ -47,6 +48,11 @@ int messenger_unread_total();
 void messenger_send_advert();  // flood advert so others can add us
 const char *messenger_node_name();
 void messenger_set_node_name(const char *name);
-uint32_t messenger_packets_heard();
-float messenger_last_rssi();
 void messenger_set_listener(MessengerListener listener);
+
+// Bluetooth link for the MeshCore phone app. The on/off setting is saved.
+bool messenger_bt_enabled();
+void messenger_bt_set_enabled(bool on);
+bool messenger_bt_connected();  // a phone is paired and connected
+const char *messenger_bt_name();  // what the phone app lists, "MeshCore-<watch name>"
+uint32_t messenger_bt_pin();  // six-digit pairing PIN
