@@ -12,6 +12,14 @@ make settime            # set the watch's RTC from this computer's clock (sketch
 make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX1262
 ```
 
+## Using the watch
+
+- The screen turns off after 10 s without input; tap it or press PWR or BOOT to wake it.
+- Swipe up on the watch face for Apps. **Alarms** lists your alarms (up to 8): tap one to edit
+  or delete it, use its switch to turn it on/off, and tap **+** to add one. Enabled alarms ring
+  daily, wake the screen, vibrate and beep, and stop after 1 minute; **Snooze** waits 5 minutes.
+- Alarms are saved in flash (NVS) and survive reboots and reflashing.
+
 If uploading fails or the USB port keeps reconnecting, enter download mode: hold **BOOT**,
 press **RST**, release **BOOT**, upload, then press **RST** to run.
 
