@@ -7,6 +7,7 @@
 #include <LV_Helper.h>
 #include <sys/time.h>
 #include "alarms.h"
+#include "bluetooth_app.h"
 #include "gps_app.h"
 #include "map_app.h"
 #include "messages.h"
@@ -147,30 +148,31 @@ static void show_face()
     }
 }
 
-// Adds a round icon button with a caption to the launcher grid (three per row).
+// Adds a round icon button with a caption to the launcher grid (four per row).
 static void add_app(lv_obj_t *grid, const char *symbol, const char *name, lv_color_t color, lv_event_cb_t cb)
 {
     lv_obj_t *item = lv_obj_create(grid);
     lv_obj_remove_style_all(item);
-    lv_obj_set_size(item, 130, LV_SIZE_CONTENT);
+    lv_obj_set_size(item, 96, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(item, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(item, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(item, 10, 0);
+    lv_obj_set_style_pad_row(item, 8, 0);
 
     lv_obj_t *btn = lv_button_create(item);
-    lv_obj_set_size(btn, 104, 104);
+    lv_obj_set_size(btn, 84, 84);
     lv_obj_set_style_radius(btn, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(btn, color, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
     lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *icon = lv_label_create(btn);
     lv_label_set_text(icon, symbol);
-    lv_obj_set_style_text_font(icon, &lv_font_montserrat_42, 0);
+    lv_obj_set_style_text_font(icon, &lv_font_montserrat_36, 0);
     lv_obj_set_style_text_color(icon, lv_color_black(), 0);
     lv_obj_center(icon);
 
     lv_obj_t *caption = lv_label_create(item);
     lv_label_set_text(caption, name);
+    lv_obj_set_style_text_font(caption, &lv_font_montserrat_18, 0);
 }
 
 static void build_launcher(lv_obj_t *page)
@@ -205,6 +207,9 @@ static void build_launcher(lv_obj_t *page)
     });
     add_app(grid, LV_SYMBOL_WIFI, "Wi-Fi", lv_palette_main(LV_PALETTE_BLUE), [](lv_event_t *) {
         wifi_open();
+    });
+    add_app(grid, LV_SYMBOL_BLUETOOTH, "Bluetooth", lv_palette_main(LV_PALETTE_INDIGO), [](lv_event_t *) {
+        bluetooth_open();
     });
 }
 
@@ -329,6 +334,7 @@ void setup()
         Serial.println("LoRa radio failed to start");
     }
     messages_init(home_screen);
+    bluetooth_init(home_screen);
 
     wake_shield = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(wake_shield);
