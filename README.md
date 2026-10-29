@@ -16,7 +16,8 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
 ## Using the watch
 
 - The screen turns off after 10 s without input; tap it or press PWR or BOOT to wake it. A tap or
-  PWR wakes it on the screen you left (the waking tap doesn't press anything).
+  PWR wakes it on the screen you left (the waking tap doesn't press anything). A quick press of
+  PWR while the screen is on turns it off right away (a ringing alarm keeps it on).
 - **BOOT** goes straight back to the watch face from any app or the Apps page, waking the screen
   if needed. It does nothing while an alarm is ringing, so Snooze/Stop stay on screen.
 - Swipe up on the watch face for Apps. **Alarms** lists your alarms (up to 8): tap one to edit

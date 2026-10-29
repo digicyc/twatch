@@ -40,6 +40,8 @@ static bool screen_on = true;
 // Invisible full-screen layer, shown while the display is off, that catches the touch that wakes
 // it so the tap doesn't also press whatever is underneath (keyboard keys fire on press).
 static lv_obj_t *wake_shield;
+static bool forced_off;      // the power key turned the screen off
+static uint32_t forced_at;   // when, in LVGL ticks
 
 static void update_face(lv_timer_t *)
 {
@@ -104,12 +106,16 @@ static void hide_wake_shield(lv_event_t *)
     lv_obj_add_flag(wake_shield, LV_OBJ_FLAG_HIDDEN);
 }
 
-// Turns the display off after SCREEN_TIMEOUT_MS without input; waking it shows the same screen.
-// LVGL resets its inactivity time on touch; buttons, alarms and messages reset it via
-// lv_display_trigger_activity().
+// Turns the display off after SCREEN_TIMEOUT_MS without input, or right away after a power key
+// click; waking it shows the same screen. LVGL resets its inactivity time on touch; buttons, alarms
+// and messages reset it via lv_display_trigger_activity().
 static void update_screen_power()
 {
-    bool idle = lv_display_get_inactive_time(NULL) > SCREEN_TIMEOUT_MS;
+    uint32_t inactive = lv_display_get_inactive_time(NULL);
+    if (forced_off && inactive < lv_tick_elaps(forced_at)) {
+        forced_off = false;  // input since the power key turned it off
+    }
+    bool idle = forced_off || inactive > SCREEN_TIMEOUT_MS;
     if (idle && screen_on) {
         screen_on = false;
         lv_timer_pause(face_timer);
@@ -331,11 +337,17 @@ void setup()
     lv_obj_add_event_cb(wake_shield, hide_wake_shield, LV_EVENT_RELEASED, NULL);
     lv_obj_add_event_cb(wake_shield, hide_wake_shield, LV_EVENT_PRESS_LOST, NULL);
 
-    // PWR button (PMU) and BOOT button wake the screen; BOOT also goes to the watch face, except
+    // A PWR button (PMU) click toggles the screen. BOOT wakes it and goes to the watch face, except
     // while an alarm rings so its Snooze/Stop screen stays up.
     instance.onEvent(POWER_EVENT, [](const DeviceEvent &event, void *) {
         if (instance.getPMUEventType(event) == PMU_EVENT_KEY_CLICKED) {
-            lv_display_trigger_activity(NULL);
+            // A click toggles the screen: on turns it off now, off wakes it like any other input.
+            if (screen_on) {
+                forced_off = true;
+                forced_at = lv_tick_get();
+            } else {
+                lv_display_trigger_activity(NULL);
+            }
         }
     });
     instance.onEvent(BUTTON_EVENT, [](const DeviceEvent &, void *) {
