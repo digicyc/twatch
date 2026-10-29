@@ -1,4 +1,5 @@
 #include "alarms.h"
+#include "ui.h"
 #include <LilyGoLib.h>
 #include <Preferences.h>
 
@@ -8,8 +9,6 @@ static const uint8_t MAX_ALARMS = 8;
 static const time_t SNOOZE_SECONDS = 5 * 60;
 static const uint32_t RING_TIMEOUT_MS = 60 * 1000;
 static const uint32_t SAMPLE_RATE = 16000;
-static const lv_color_t GRAY = LV_COLOR_MAKE(0x9E, 0x9E, 0x9E);
-static const lv_color_t CARD = LV_COLOR_MAKE(0x1C, 0x1C, 0x1E);
 
 // Bit n of `days` is weekday n (0 = Sunday, matching tm_wday).
 static const uint8_t DAYS_ONCE = 0x00, DAYS_WEEKDAYS = 0x3E, DAYS_WEEKENDS = 0x41, DAYS_DAILY = 0x7F;
@@ -97,37 +96,6 @@ static const char *days_summary(uint8_t days)
 static int hour12(uint8_t hour)
 {
     return hour % 12 ? hour % 12 : 12;
-}
-
-static lv_obj_t *make_screen()
-{
-    lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_black(), 0);
-    lv_obj_set_style_text_color(screen, lv_color_white(), 0);
-    lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
-    return screen;
-}
-
-static lv_obj_t *make_label(lv_obj_t *parent, const char *text, const lv_font_t *font, lv_color_t color)
-{
-    lv_obj_t *label = lv_label_create(parent);
-    lv_label_set_text(label, text);
-    lv_obj_set_style_text_font(label, font, 0);
-    lv_obj_set_style_text_color(label, color, 0);
-    return label;
-}
-
-// A text-only button for screen headers.
-static lv_obj_t *header_button(lv_obj_t *parent, const char *text, lv_align_t align, lv_event_cb_t cb)
-{
-    lv_obj_t *btn = lv_button_create(parent);
-    lv_obj_set_style_bg_opa(btn, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_shadow_width(btn, 0, 0);
-    lv_obj_set_style_pad_all(btn, 14, 0);
-    make_label(btn, text, &lv_font_montserrat_28, lv_palette_main(LV_PALETTE_ORANGE));
-    lv_obj_align(btn, align, align == LV_ALIGN_TOP_LEFT ? 16 : -16, 20);
-    lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, NULL);
-    return btn;
 }
 
 static lv_obj_t *pill_button(lv_obj_t *parent, const char *text, lv_color_t bg, lv_color_t fg, lv_event_cb_t cb)
