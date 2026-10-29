@@ -1,7 +1,9 @@
 #include "wifi_app.h"
 #include "ui.h"
+#include <LilyGoLib.h>
 #include <Preferences.h>
 #include <WiFi.h>
+#include <esp_sntp.h>
 #include <algorithm>
 #include <atomic>
 #include <vector>
@@ -31,11 +33,17 @@ static uint32_t join_started;
 static std::atomic<uint8_t> disconnect_reason{0};  // last join failure, set from the Wi-Fi event task
 static String message;                             // last join result, shown under the status
 
+// Internet time: SNTP starts when Wi-Fi connects and re-syncs hourly; each sync is written to the RTC.
+static bool sntp_running;
+static std::atomic<bool> time_synced{false};  // set from the SNTP task
+static time_t last_sync;                      // 0 if never; saved so it shows after a reboot
+
 static std::vector<WifiNetwork> networks;
 static bool scan_wanted, scanning, scan_failed;
 static uint32_t scan_wanted_since;
 
 static lv_obj_t *home_screen, *screen, *power_switch, *status_label, *detail_label, *list_cont;
+static lv_obj_t *sync_row, *sync_label;
 static lv_obj_t *pw_screen, *pw_title, *pw_ta, *pw_hint, *pw_kb;
 static String pw_ssid;  // network the password screen is for
 static String shown_state;  // what list_cont was last built from
@@ -109,11 +117,40 @@ static void join_failed(const char *why)
     }
 }
 
-// Runs every 500 ms whether or not the screen is showing: finishes joins and scans.
+static void start_clock_sync()
+{
+    char tz[64];  // configTzTime sets TZ; pass the current zone so it stays
+    const char *current = getenv("TZ");
+    strlcpy(tz, current ? current : "UTC0", sizeof(tz));
+    configTzTime(tz, "pool.ntp.org", "time.google.com", "time.nist.gov");
+    sntp_running = true;
+}
+
+static void stop_clock_sync()
+{
+    if (sntp_running) {
+        esp_sntp_stop();
+        sntp_running = false;
+    }
+}
+
+// Runs every 500 ms whether or not the screen is showing: finishes joins and scans, and keeps the
+// clock in sync.
 static void tick()
 {
     if (!wifi_on) {
         return;
+    }
+    if (connected() && !sntp_running) {
+        start_clock_sync();
+    }
+    if (time_synced.exchange(false)) {
+        time_t now = time(NULL);
+        struct tm utc;
+        gmtime_r(&now, &utc);
+        instance.rtc.setDateTime(utc);  // the RTC keeps UTC
+        last_sync = now;
+        prefs.putUInt("synced", (uint32_t)now);
     }
     if (joining) {
         const char *failure = failure_text(disconnect_reason);
@@ -198,10 +235,21 @@ static void forget_cb(lv_event_t *)
     WiFi.disconnect();
 }
 
+// Signal bars, 1-4, for an RSSI in dBm.
+static int signal_level(int rssi)
+{
+    return rssi > -55 ? 4 : rssi > -67 ? 3 : rssi > -78 ? 2 : 1;
+}
+
+int wifi_signal_level()
+{
+    return wifi_on && connected() ? signal_level(WiFi.RSSI()) : 0;
+}
+
 // Four signal bars, lit by strength.
 static void add_signal_bars(lv_obj_t *parent, int rssi)
 {
-    int lit = rssi > -55 ? 4 : rssi > -67 ? 3 : rssi > -78 ? 2 : 1;
+    int lit = signal_level(rssi);
     lv_obj_t *bars = lv_obj_create(parent);
     lv_obj_remove_style_all(bars);
     lv_obj_set_size(bars, 4 * 8 + 3 * 4, 28);
@@ -294,6 +342,23 @@ static void rebuild_list()
     }
 }
 
+// "3:42 PM" for today, "Oct 28, 3:42 PM" for earlier days.
+static String format_sync_time(time_t t)
+{
+    time_t now = time(NULL);
+    struct tm when, today;
+    localtime_r(&t, &when);
+    localtime_r(&now, &today);
+    char buf[32];
+    int n = 0;
+    if (when.tm_year != today.tm_year || when.tm_yday != today.tm_yday) {
+        n = strftime(buf, sizeof(buf), "%b %d, ", &when);
+    }
+    snprintf(buf + n, sizeof(buf) - n, "%d:%02d %s", when.tm_hour % 12 ? when.tm_hour % 12 : 12, when.tm_min,
+             when.tm_hour < 12 ? "AM" : "PM");
+    return buf;
+}
+
 static void update_screen()
 {
     if (!wifi_on) {
@@ -312,11 +377,19 @@ static void update_screen()
     lv_obj_set_style_text_color(status_label, wifi_on && !joining && connected() ? GREEN : GRAY, 0);
     lv_obj_set_style_text_color(detail_label, message.length() && !connected() ? RED : GRAY, 0);
 
+    bool syncing = wifi_on && connected() && !last_sync;
+    if (last_sync || syncing) {
+        set_text(sync_label, syncing ? "Syncing..." : ("Synced " + format_sync_time(last_sync)).c_str());
+        lv_obj_remove_flag(sync_row, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(sync_row, LV_OBJ_FLAG_HIDDEN);
+    }
+
     // Rebuild the list only when something it shows has changed.
     String state = String(wifi_on) + joining + scanning + scan_wanted + scan_failed + (connected() ? WiFi.SSID() : "") +
                    "|" + saved_ssid + "|" + join_ssid;
     for (const WifiNetwork &n : networks) {
-        state += "|" + n.ssid + (n.rssi > -55 ? 4 : n.rssi > -67 ? 3 : n.rssi > -78 ? 2 : 1);
+        state += "|" + n.ssid + signal_level(n.rssi);
     }
     if (state != shown_state) {
         shown_state = state;
@@ -343,6 +416,7 @@ static void switch_cb(lv_event_t *)
         radio_on();
         request_scan();
     } else {
+        stop_clock_sync();
         WiFi.disconnect(true);
         WiFi.mode(WIFI_OFF);
     }
@@ -388,6 +462,14 @@ static void build_screen()
     lv_obj_set_style_bg_color(power_switch, ORANGE, LV_PART_INDICATOR | LV_STATE_CHECKED);
     lv_obj_align(power_switch, LV_ALIGN_RIGHT_MID, 0, 0);
     lv_obj_add_event_cb(power_switch, switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    // When the clock was last set from internet time.
+    sync_row = make_row(cont, 64);
+    make_label(sync_row, "Internet time", &lv_font_montserrat_20, lv_color_white());
+    lv_obj_align(lv_obj_get_child(sync_row, 0), LV_ALIGN_LEFT_MID, 0, 0);
+    sync_label = make_label(sync_row, "", &lv_font_montserrat_18, GRAY);
+    lv_obj_align(sync_label, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_add_flag(sync_row, LV_OBJ_FLAG_HIDDEN);
 
     // Saved network and scan results.
     list_cont = lv_obj_create(cont);
@@ -491,7 +573,9 @@ void wifi_init(lv_obj_t *home)
     wifi_on = prefs.getBool("on", false);
     saved_ssid = prefs.getString("ssid", "");
     saved_pass = prefs.getString("pass", "");
+    last_sync = prefs.getUInt("synced", 0);
     WiFi.persistent(false);  // credentials live in our own preferences
+    esp_sntp_set_time_sync_notification_cb([](struct timeval *) { time_synced = true; });
     WiFi.onEvent([](arduino_event_id_t, arduino_event_info_t info) {
         if (failure_text(info.wifi_sta_disconnected.reason)) {
             disconnect_reason = info.wifi_sta_disconnected.reason;

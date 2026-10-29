@@ -9,3 +9,6 @@ void wifi_init(lv_obj_t *home);
 
 // Shows the Wi-Fi screen and scans for networks.
 void wifi_open();
+
+// Signal bars for the watch face: 0 when not connected, otherwise 1 (weak) to 4 (strong).
+int wifi_signal_level();

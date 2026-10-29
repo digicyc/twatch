@@ -8,7 +8,8 @@ make build              # compile into ./build
 make upload             # flash (auto-detects /dev/ttyACM*, or pass PORT=...)
 make monitor            # serial console at 115200
 make flash              # build + upload + monitor
-make settime            # set the watch's RTC from this computer's clock (sketch must be running)
+make settime            # set the watch's RTC from this computer's clock (sketch must be running;
+                        # not needed once the watch has Wi-Fi, which sets it from internet time)
 make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX1262
 ```
 
@@ -61,7 +62,10 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
   network to join it; secured ones ask for the password on the slide-up keyboard (the eye button
   shows it). A network that joins becomes the saved network, which the watch reconnects to at
   boot and whenever it's back in range; **Forget** removes it. A failed join says why (wrong
-  password, network not found, or timed out) and goes back to the saved network.
+  password, network not found, or timed out) and goes back to the saved network. While connected,
+  the watch face shows a green Wi-Fi icon at the top left whose lit arcs show the signal strength.
+  Connecting also sets the clock from internet time (NTP), and it re-syncs every hour while
+  connected.
 
 If uploading fails or the USB port keeps reconnecting, enter download mode: hold **BOOT**,
 press **RST**, release **BOOT**, upload, then press **RST** to run.

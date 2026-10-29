@@ -1,8 +1,8 @@
 // WatchApp: watch face for the LilyGo T-Watch Ultra. Swipe up for apps (Alarms, Messages, GPS,
 // Map, SD Card, Wi-Fi).
 //
-// The RTC keeps UTC. Set it from the host with `make settime`, which sends "T<unix seconds>\n"
-// over USB serial.
+// The RTC keeps UTC. The Wi-Fi app sets it from internet time whenever Wi-Fi connects; without
+// Wi-Fi, set it from the host with `make settime`, which sends "T<unix seconds>\n" over USB serial.
 #include <LilyGoLib.h>
 #include <LV_Helper.h>
 #include <sys/time.h>
@@ -20,6 +20,10 @@ static const uint32_t SCREEN_TIMEOUT_MS = 10000;
 
 LV_FONT_DECLARE(font_alibaba_100);
 LV_IMAGE_DECLARE(satellite_icon);
+LV_IMAGE_DECLARE(wifi_icon_1);
+LV_IMAGE_DECLARE(wifi_icon_2);
+LV_IMAGE_DECLARE(wifi_icon_3);
+LV_IMAGE_DECLARE(wifi_icon_4);
 
 static lv_obj_t *time_label;
 static lv_obj_t *ampm_label;
@@ -28,6 +32,7 @@ static lv_obj_t *date_label;
 static lv_obj_t *battery_label;
 static lv_obj_t *battery_bar;
 static lv_obj_t *gps_box, *gps_icon, *gps_label;  // satellite icon and count, top right
+static lv_obj_t *wifi_icon;                        // Wi-Fi signal, top left
 static lv_timer_t *face_timer;
 static lv_obj_t *home_screen;
 static lv_obj_t *tileview;  // page 0 is the watch face, page 1 the app launcher
@@ -81,6 +86,16 @@ static void update_face(lv_timer_t *)
         lv_obj_remove_flag(gps_box, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(gps_box, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    // Wi-Fi: shown while connected, with the signal as lit arcs.
+    static const lv_image_dsc_t *const WIFI_ICONS[] = {&wifi_icon_1, &wifi_icon_2, &wifi_icon_3, &wifi_icon_4};
+    int level = wifi_signal_level();
+    if (level) {
+        lv_image_set_src(wifi_icon, WIFI_ICONS[level - 1]);
+        lv_obj_remove_flag(wifi_icon, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(wifi_icon, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -273,6 +288,11 @@ void setup()
     lv_image_set_src(gps_icon, &satellite_icon);  // alpha-only; drawn in the recolor color
     gps_label = lv_label_create(gps_box);
     lv_obj_set_style_text_font(gps_label, &lv_font_montserrat_20, 0);
+
+    wifi_icon = lv_image_create(face);  // mirrors the GPS icon; alpha-only, drawn in the recolor color
+    lv_obj_set_style_image_recolor(wifi_icon, lv_palette_main(LV_PALETTE_GREEN), 0);
+    lv_obj_align(wifi_icon, LV_ALIGN_TOP_LEFT, 52, 42);
+    lv_obj_add_flag(wifi_icon, LV_OBJ_FLAG_HIDDEN);
 
     time_label = lv_label_create(face);
     lv_obj_set_style_text_font(time_label, &font_alibaba_100, 0);
