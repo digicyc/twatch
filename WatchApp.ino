@@ -1,4 +1,4 @@
-// WatchApp: watch face for the LilyGo T-Watch Ultra. Swipe up for apps (Alarms).
+// WatchApp: watch face for the LilyGo T-Watch Ultra. Swipe up for apps (Alarms, Messages, GPS).
 //
 // The RTC keeps UTC. Set it from the host with `make settime`, which sends "T<unix seconds>\n"
 // over USB serial.
@@ -6,12 +6,16 @@
 #include <LV_Helper.h>
 #include <sys/time.h>
 #include "alarms.h"
+#include "gps_app.h"
+#include "messages.h"
+#include "messenger.h"
 
 // POSIX rule for America/Denver (MST/MDT).
 static const char *TIME_ZONE = "MST7MDT,M3.2.0,M11.1.0";
 static const uint32_t SCREEN_TIMEOUT_MS = 10000;
 
 LV_FONT_DECLARE(font_alibaba_100);
+LV_IMAGE_DECLARE(satellite_icon);
 
 static lv_obj_t *time_label;
 static lv_obj_t *ampm_label;
@@ -19,10 +23,14 @@ static lv_obj_t *weekday_label;
 static lv_obj_t *date_label;
 static lv_obj_t *battery_label;
 static lv_obj_t *battery_bar;
+static lv_obj_t *gps_box, *gps_icon, *gps_label;  // satellite icon and count, top right
 static lv_timer_t *face_timer;
 static lv_obj_t *home_screen;
-static lv_obj_t *tileview;
+static lv_obj_t *tileview;  // page 0 is the watch face, page 1 the app launcher
 static bool screen_on = true;
+// Invisible full-screen layer, shown while the display is off, that catches the touch that wakes
+// it so the tap doesn't also press whatever is underneath (keyboard keys fire on press).
+static lv_obj_t *wake_shield;
 
 static void update_face(lv_timer_t *)
 {
@@ -57,10 +65,28 @@ static void update_face(lv_timer_t *)
     lv_obj_set_style_text_color(battery_label, color, 0);
     lv_bar_set_value(battery_bar, percent, LV_ANIM_OFF);
     lv_obj_set_style_bg_color(battery_bar, color, LV_PART_INDICATOR);
+
+    // GPS: hidden when off, gray while searching, green with a fix; the count is satellites
+    // in view while searching and used once fixed.
+    GpsStatus gps = gps_status();
+    if (gps.on) {
+        lv_color_t gps_color = gps.fix ? lv_palette_main(LV_PALETTE_GREEN) : lv_color_hex(0x9E9E9E);
+        lv_label_set_text_fmt(gps_label, "%d", gps.satellites);
+        lv_obj_set_style_text_color(gps_label, gps_color, 0);
+        lv_obj_set_style_image_recolor(gps_icon, gps_color, 0);
+        lv_obj_remove_flag(gps_box, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(gps_box, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
-// Turns the display off after SCREEN_TIMEOUT_MS without input, returning to the watch face.
-// LVGL resets its inactivity time on touch; buttons and alarms reset it via
+static void hide_wake_shield(lv_event_t *)
+{
+    lv_obj_add_flag(wake_shield, LV_OBJ_FLAG_HIDDEN);
+}
+
+// Turns the display off after SCREEN_TIMEOUT_MS without input; waking it shows the same screen.
+// LVGL resets its inactivity time on touch; buttons, alarms and messages reset it via
 // lv_display_trigger_activity().
 static void update_screen_power()
 {
@@ -70,15 +96,29 @@ static void update_screen_power()
         lv_timer_pause(face_timer);
         instance.setBrightness(0);
         instance.sleepDisplay();
-        lv_screen_load(home_screen);
-        lv_tileview_set_tile_by_index(tileview, 0, 0, LV_ANIM_OFF);
+        lv_obj_remove_flag(wake_shield, LV_OBJ_FLAG_HIDDEN);
     } else if (!idle && !screen_on) {
         screen_on = true;
+        // A waking touch is still on the shield and hides it when lifted; buttons and messages
+        // don't touch it, so hide it now.
+        lv_indev_t *touch = lv_get_touch_indev();
+        if (!touch || lv_indev_get_state(touch) != LV_INDEV_STATE_PRESSED) {
+            hide_wake_shield(NULL);
+        }
         instance.wakeupDisplay();
         update_face(NULL);
         lv_timer_resume(face_timer);
         lv_refr_now(NULL);
         instance.setBrightness(DEVICE_MAX_BRIGHTNESS_LEVEL);
+    }
+}
+
+// Returns to the watch face from any app or the launcher.
+static void show_face()
+{
+    lv_tileview_set_tile_by_index(tileview, 0, 0, screen_on ? LV_ANIM_ON : LV_ANIM_OFF);
+    if (lv_screen_active() != home_screen) {
+        lv_screen_load_anim(home_screen, screen_on ? LV_SCREEN_LOAD_ANIM_MOVE_RIGHT : LV_SCREEN_LOAD_ANIM_NONE, 200, 0, false);
     }
 }
 
@@ -125,6 +165,12 @@ static void build_launcher(lv_obj_t *page)
 
     add_app(grid, LV_SYMBOL_BELL, "Alarms", lv_palette_main(LV_PALETTE_ORANGE), [](lv_event_t *) {
         alarms_open();
+    });
+    add_app(grid, LV_SYMBOL_ENVELOPE, "Messages", lv_palette_main(LV_PALETTE_LIGHT_BLUE), [](lv_event_t *) {
+        messages_open();
+    });
+    add_app(grid, LV_SYMBOL_GPS, "GPS", lv_palette_main(LV_PALETTE_GREEN), [](lv_event_t *) {
+        gps_open();
     });
 }
 
@@ -203,6 +249,18 @@ void setup()
     lv_obj_set_style_bg_opa(battery_bar, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_align(battery_bar, LV_ALIGN_TOP_MID, 0, 78);
 
+    gps_box = lv_obj_create(face);
+    lv_obj_remove_style_all(gps_box);
+    lv_obj_set_size(gps_box, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(gps_box, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(gps_box, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(gps_box, 4, 0);
+    lv_obj_align(gps_box, LV_ALIGN_TOP_RIGHT, -52, 42);
+    gps_icon = lv_image_create(gps_box);
+    lv_image_set_src(gps_icon, &satellite_icon);  // alpha-only; drawn in the recolor color
+    gps_label = lv_label_create(gps_box);
+    lv_obj_set_style_text_font(gps_label, &lv_font_montserrat_20, 0);
+
     time_label = lv_label_create(face);
     lv_obj_set_style_text_font(time_label, &font_alibaba_100, 0);
     lv_obj_align(time_label, LV_ALIGN_CENTER, -20, -30);
@@ -224,8 +282,21 @@ void setup()
     update_face(NULL);
     face_timer = lv_timer_create(update_face, 1000, NULL);
     alarms_init(home_screen);
+    gps_init(home_screen);
+    if (!messenger_init()) {
+        Serial.println("LoRa radio failed to start");
+    }
+    messages_init(home_screen);
 
-    // PWR button (PMU) and BOOT button wake the screen.
+    wake_shield = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(wake_shield);
+    lv_obj_set_size(wake_shield, LV_PCT(100), LV_PCT(100));
+    lv_obj_add_flag(wake_shield, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(wake_shield, hide_wake_shield, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(wake_shield, hide_wake_shield, LV_EVENT_PRESS_LOST, NULL);
+
+    // PWR button (PMU) and BOOT button wake the screen; BOOT also goes to the watch face, except
+    // while an alarm rings so its Snooze/Stop screen stays up.
     instance.onEvent(POWER_EVENT, [](const DeviceEvent &event, void *) {
         if (instance.getPMUEventType(event) == PMU_EVENT_KEY_CLICKED) {
             lv_display_trigger_activity(NULL);
@@ -233,6 +304,9 @@ void setup()
     });
     instance.onEvent(BUTTON_EVENT, [](const DeviceEvent &, void *) {
         lv_display_trigger_activity(NULL);
+        if (!alarms_ringing()) {
+            show_face();
+        }
     });
 
     instance.setBrightness(DEVICE_MAX_BRIGHTNESS_LEVEL);
@@ -244,6 +318,8 @@ void loop()
     instance.loop();  // dispatches PMU and button events
     handle_serial();
     alarms_tick();
+    gps_tick();
+    messenger_loop();
     update_screen_power();
     lv_timer_handler();
     delay(5);
