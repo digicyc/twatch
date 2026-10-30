@@ -85,3 +85,9 @@ press **RST**, release **BOOT**, upload, then press **RST** to run.
 BOOT is the bottom left button on the Watch.
 
 `build/compile_commands.json` can be used by clangd for editor completion.
+
+## Hardware
+
+Buttons, ports and pin assignments of the T-Watch Ultra (LilyGo's pin map):
+
+![LilyGo T-Watch Ultra pin map](t-watch-ultra-pin.jpg)
