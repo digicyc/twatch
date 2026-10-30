@@ -2,8 +2,10 @@
 #include "ui.h"
 #include <LilyGoLib.h>
 #include <Preferences.h>
+#include <sys/time.h>
 
 static const uint32_t FIX_MAX_AGE_MS = 5000;  // older positions are from before the GPS lost its fix
+static const uint32_t CLOCK_SYNC_INTERVAL_MS = 3600000;  // re-set the clock hourly while there's a fix
 static const int MAX_BARS = 12;               // satellites shown, strongest first; fills the card
 static const int BAR_MAX_HEIGHT = 100;        // px for a C/N0 of FULL_CN0 or more
 static const int FULL_CN0 = 50;               // dB-Hz
@@ -16,8 +18,12 @@ static const char *ROW_NAMES[ROW_COUNT] = {"Latitude", "Longitude", "Altitude", 
 
 static Preferences prefs;
 static bool gps_on;          // the user's setting
-static bool powered = true;  // LilyGoLib powers the receiver on in begin()
+static bool running = true;  // LilyGoLib starts the receiver in begin()
+static bool aid_pending = true;  // send the time once the receiver is talking
+static uint32_t chars_at_wake;
 static GNSSSatelliteInfo sats[GNSS_MAX_SATELLITES];
+static bool clock_synced;
+static uint32_t clock_synced_ms;
 
 static lv_obj_t *home_screen, *screen, *power_switch, *status_label, *values[ROW_COUNT];
 static lv_obj_t *sats_count_label, *bars_cont;
@@ -29,7 +35,7 @@ static bool online()
 
 static bool has_fix()
 {
-    return powered && instance.gps.location.isValid() && instance.gps.location.age() < FIX_MAX_AGE_MS;
+    return running && instance.gps.location.isValid() && instance.gps.location.age() < FIX_MAX_AGE_MS;
 }
 
 GpsStatus gps_status()
@@ -37,7 +43,7 @@ GpsStatus gps_status()
     GpsStatus s = {gps_on, has_fix(), 0};
     if (s.fix) {
         s.satellites = instance.gps.satellites.value();
-    } else if (powered && online()) {
+    } else if (running && online()) {
         s.satellites = instance.gps.getSatelliteCount();
     }
     return s;
@@ -53,19 +59,115 @@ bool gps_location(double &lat, double &lon)
     return true;
 }
 
+// Seconds since 1970 for a UTC date and time (newlib has no timegm).
+static time_t utc_epoch(int y, int mon, int d, int h, int min, int sec)
+{
+    y -= mon <= 2;
+    int era = y / 400, yoe = y - era * 400;
+    int doy = (153 * (mon + (mon > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    long days = era * 146097L + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719468;
+    return days * 86400 + h * 3600 + min * 60 + sec;
+}
+
+// Sets the clock and RTC from GPS time on the first fix after boot and hourly after, so the time is
+// right without Wi-Fi. The receiver reports a time before it has a fix too, but it can be wrong.
+static void sync_clock()
+{
+    GPS &gps = instance.gps;
+    if ((clock_synced && millis() - clock_synced_ms < CLOCK_SYNC_INTERVAL_MS) || !has_fix() || !gps.date.isValid() ||
+        !gps.time.isValid() || gps.date.age() > 1000 || gps.time.age() > 1000 || gps.date.year() < 2025) {
+        return;
+    }
+    time_t t = utc_epoch(gps.date.year(), gps.date.month(), gps.date.day(), gps.time.hour(), gps.time.minute(),
+                         gps.time.second());
+    struct timeval tv = {.tv_sec = t, .tv_usec = 0};
+    settimeofday(&tv, NULL);
+    struct tm utc;
+    gmtime_r(&t, &utc);
+    instance.rtc.setDateTime(utc);  // the RTC keeps UTC
+    clock_synced = true;
+    clock_synced_ms = millis();
+    Serial.printf("Clock set from GPS: %s", ctime(&t));
+}
+
+// Off puts the receiver in backup mode rather than cutting its power: it keeps its last position and
+// satellite data, and its UART stays usable for the time aid below, so it has a fix again ~10 s after
+// being turned on (~30 s from a power cut).
+static void receiver_sleep()
+{
+    // UBX-RXM-PMREQ: backup mode (forced) with no time limit, woken by activity on its UART RX line.
+    static const uint8_t PMREQ[] = {0xB5, 0x62, 0x02, 0x41, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                    0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x61, 0x6B};
+    Serial1.write(PMREQ, sizeof(PMREQ));
+}
+
+static void receiver_wake()
+{
+    static const uint8_t WAKE[] = {0xFF, 0xFF, 0xFF, 0xFF};  // lost while it wakes; any edge will do
+    Serial1.write(WAKE, sizeof(WAKE));
+}
+
+// The receiver keeps its satellite data while off but not the time, and finding the time from the
+// satellites takes ~15 s. Telling it the watch's time (UBX-MGA-INI-TIME_UTC) lets it use that data
+// straight away.
+static void send_time_aid()
+{
+    time_t now = time(NULL);
+    struct tm utc;
+    gmtime_r(&now, &utc);
+    if (utc.tm_year + 1900 < 2025) {
+        return;  // the watch doesn't know the time either
+    }
+    uint8_t msg[8 + 24] = {0xB5, 0x62, 0x13, 0x40, 24, 0};
+    uint8_t *p = msg + 6;
+    p[0] = 0x10;                // type: TIME_UTC
+    p[3] = 0x80;                // leap seconds unknown
+    p[4] = (utc.tm_year + 1900) & 0xFF;
+    p[5] = (utc.tm_year + 1900) >> 8;
+    p[6] = utc.tm_mon + 1;
+    p[7] = utc.tm_mday;
+    p[8] = utc.tm_hour;
+    p[9] = utc.tm_min;
+    p[10] = utc.tm_sec;
+    p[16] = 2;                  // accuracy: 2 s
+    uint8_t a = 0, b = 0;
+    for (int i = 2; i < 6 + 24; i++) {
+        a += msg[i];
+        b += a;
+    }
+    msg[30] = a;
+    msg[31] = b;
+    Serial1.write(msg, sizeof(msg));
+}
+
 void gps_tick()
 {
     GPS &gps = instance.gps;
-    // Power down only after LilyGoLib's boot-time probe finishes, or the receiver never comes online.
-    if (!gps_on && powered && gps.probeDone()) {
-        instance.powerControl(POWER_GPS, false);
-        powered = false;
-    } else if (gps_on && !powered) {
-        instance.powerControl(POWER_GPS, true);
-        powered = true;
+    // Switch off only after LilyGoLib's boot-time probe finishes, or the receiver never comes online.
+    if (!gps_on && running && gps.probeDone()) {
+        if (online()) {
+            receiver_sleep();
+        } else {
+            instance.powerControl(POWER_GPS, false);  // nothing answered the probe
+        }
+        running = false;
+    } else if (gps_on && !running) {
+        if (online()) {
+            receiver_wake();
+            aid_pending = true;
+            chars_at_wake = gps.charsProcessed();
+        } else {
+            instance.powerControl(POWER_GPS, true);
+        }
+        running = true;
     }
-    if (powered && online()) {
+    if (running && online()) {
         gps.loop();  // instance.loop() parses NMEA; this also drops satellites unheard for 5 s
+        if (aid_pending && gps_on && gps.charsProcessed() != chars_at_wake) {
+            aid_pending = false;
+            send_time_aid();
+        }
+        sync_clock();
     }
 }
 
@@ -84,7 +186,7 @@ static void set_value(int row, const char *fmt, ...)
 static void update_bars()
 {
     lv_obj_clean(bars_cont);
-    size_t n = powered && online() ? instance.gps.copySatellites(sats, GNSS_MAX_SATELLITES) : 0;
+    size_t n = running && online() ? instance.gps.copySatellites(sats, GNSS_MAX_SATELLITES) : 0;
     int used = 0;
     for (size_t i = 0; i < n; i++) {
         used += sats[i].used;

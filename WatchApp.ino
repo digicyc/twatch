@@ -1,8 +1,9 @@
 // WatchApp: watch face for the LilyGo T-Watch Ultra. Swipe up for apps (Alarms, Messages, GPS,
-// Map, SD Card, Wi-Fi).
+// Map, SD Card, Wi-Fi, Bluetooth, Settings).
 //
-// The RTC keeps UTC. The Wi-Fi app sets it from internet time whenever Wi-Fi connects; without
-// Wi-Fi, set it from the host with `make settime`, which sends "T<unix seconds>\n" over USB serial.
+// The RTC keeps UTC. The Wi-Fi app sets it from internet time whenever Wi-Fi connects, the GPS app
+// from GPS time once it has a fix, and the MeshCore phone app when it connects; otherwise set it
+// from the host with `make settime`, which sends "T<unix seconds>\n" over USB serial.
 #include <LilyGoLib.h>
 #include <LV_Helper.h>
 #include <sys/time.h>

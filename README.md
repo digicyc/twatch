@@ -9,7 +9,7 @@ make upload             # flash (auto-detects /dev/ttyACM*, or pass PORT=...)
 make monitor            # serial console at 115200
 make flash              # build + upload + monitor
 make settime            # set the watch's RTC from this computer's clock (sketch must be running;
-                        # not needed once the watch has Wi-Fi, which sets it from internet time)
+                        # not needed once the watch has Wi-Fi or a GPS fix, which set it)
 make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX1262
 ```
 
@@ -36,11 +36,13 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
   name others see (TWatch-XXXX by default); tap it to rename the watch, which also re-advertises
   it. Chats are saved on the FFat partition. The watch runs MeshCore's companion radio firmware, so
   its contacts, channels and radio settings are the ones the MeshCore phone app shows.
-- **GPS** has an on/off switch (saved across reboots; off cuts the receiver's power to save
-  battery), the current position, altitude, speed and HDOP, and a bar per satellite showing signal
+- **GPS** has an on/off switch (saved across reboots; off puts the receiver in its low-power
+  backup mode, where it keeps its satellite data, so turning it back on gets a fix in about 10 s),
+  the current position, altitude, speed and HDOP, and a bar per satellite showing signal
   strength (green = used in the fix). While GPS is on, the watch face shows a satellite icon at the top
   right: gray with the satellites in view while searching, green with the satellites used once it
-  has a fix.
+  has a fix. A fix also sets the clock from GPS time (then hourly while it lasts), so the time is
+  right away from Wi-Fi.
 - **SD Card** shows the card's size and free space, a **Test read & write** button (writes 256 KB,
   reads it back, checks it, deletes it, and reports speeds), and a file browser: tap folders to
   open them and text files to view their first 2 KB. Cards must be FAT32; if the card can't be read,
