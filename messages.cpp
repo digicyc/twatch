@@ -1,5 +1,6 @@
 #include "messages.h"
 #include "messenger.h"
+#include "settings_app.h"
 #include "ui.h"
 #include <LilyGoLib.h>
 #include <stdio.h>
@@ -449,7 +450,9 @@ static void build_compose()
 static void messenger_changed(int chat, bool incoming)
 {
     if (incoming) {
-        instance.vibrator();
+        if (settings_message_vibrate()) {
+            instance.vibrator();
+        }
         lv_display_trigger_activity(NULL);  // wakes the screen and restarts its timeout
     }
     if (chat == open_chat) {

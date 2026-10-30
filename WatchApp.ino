@@ -13,11 +13,11 @@
 #include "messages.h"
 #include "messenger.h"
 #include "sdcard_app.h"
+#include "settings_app.h"
 #include "wifi_app.h"
 
 // POSIX rule for America/Denver (MST/MDT).
 static const char *TIME_ZONE = "MST7MDT,M3.2.0,M11.1.0";
-static const uint32_t SCREEN_TIMEOUT_MS = 10000;
 
 LV_FONT_DECLARE(font_alibaba_100);
 LV_IMAGE_DECLARE(satellite_icon);
@@ -107,7 +107,7 @@ static void hide_wake_shield(lv_event_t *)
     lv_obj_add_flag(wake_shield, LV_OBJ_FLAG_HIDDEN);
 }
 
-// Turns the display off after SCREEN_TIMEOUT_MS without input, or right away after a power key
+// Turns the display off after the Settings timeout without input, or right away after a power key
 // click; waking it shows the same screen. LVGL resets its inactivity time on touch; buttons, alarms
 // and messages reset it via lv_display_trigger_activity().
 static void update_screen_power()
@@ -116,7 +116,7 @@ static void update_screen_power()
     if (forced_off && inactive < lv_tick_elaps(forced_at)) {
         forced_off = false;  // input since the power key turned it off
     }
-    bool idle = forced_off || inactive > SCREEN_TIMEOUT_MS;
+    bool idle = forced_off || inactive > settings_screen_timeout_ms();
     if (idle && screen_on) {
         screen_on = false;
         lv_timer_pause(face_timer);
@@ -135,7 +135,7 @@ static void update_screen_power()
         update_face(NULL);
         lv_timer_resume(face_timer);
         lv_refr_now(NULL);
-        instance.setBrightness(DEVICE_MAX_BRIGHTNESS_LEVEL);
+        instance.setBrightness(settings_brightness());
     }
 }
 
@@ -210,6 +210,9 @@ static void build_launcher(lv_obj_t *page)
     });
     add_app(grid, LV_SYMBOL_BLUETOOTH, "Bluetooth", lv_palette_main(LV_PALETTE_INDIGO), [](lv_event_t *) {
         bluetooth_open();
+    });
+    add_app(grid, LV_SYMBOL_SETTINGS, "Settings", lv_palette_main(LV_PALETTE_GREY), [](lv_event_t *) {
+        settings_open();
     });
 }
 
@@ -335,6 +338,7 @@ void setup()
     }
     messages_init(home_screen);
     bluetooth_init(home_screen);
+    settings_init(home_screen);
 
     wake_shield = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(wake_shield);
@@ -363,7 +367,7 @@ void setup()
         }
     });
 
-    instance.setBrightness(DEVICE_MAX_BRIGHTNESS_LEVEL);
+    instance.setBrightness(settings_brightness());
     Serial.println("WatchApp started");
 }
 

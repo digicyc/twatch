@@ -15,7 +15,7 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
 
 ## Using the watch
 
-- The screen turns off after 10 s without input; tap it or press PWR or BOOT to wake it. A tap or
+- The screen turns off after 10 s without input (change it in Settings); tap it or press PWR or BOOT to wake it. A tap or
   PWR wakes it on the screen you left (the waking tap doesn't press anything). A quick press of
   PWR while the screen is on turns it off right away (a ringing alarm keeps it on).
 - **BOOT** goes straight back to the watch face from any app or the Apps page, waking the screen
@@ -28,7 +28,7 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
 - Alarms are saved in flash (NVS) and survive reboots and reflashing.
 - **Messages** talks to MeshCore nodes over LoRa (USA/Canada preset, 910.525 MHz). It lists the
   Public channel and a chat for each MeshCore companion that has advertised nearby, with unread
-  counts. New messages buzz and wake the screen. Tap a chat to read it and the pencil button to
+  counts. New messages buzz (unless turned off in Settings) and wake the screen. Tap a chat to read it and the pencil button to
   reply: pick a quick reply, or **Type a message** for a slide-up keyboard (one-shot shift,
   **1#** for numbers and punctuation, then **#+=** for the rest of the symbols, ✓ to send). Direct
   messages show Sending / Sent / Delivered / Failed. Tap the signal icon in the list to advertise
@@ -78,6 +78,10 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
   75 KB of the internal RAM, so turn it off if you don't use the phone app. A rename on the watch
   updates the Bluetooth name right away; a rename or PIN change from the app takes effect after a
   reboot.
+- **Settings** has a **Brightness** slider (10-100%) for the screen, which changes as you drag,
+  and **Screen timeout**: how long the screen stays on without input (5 s to 2 min, 10 s by
+  default), and **Notifications**: turn off **Vibrate for messages** to stop the buzz for new
+  messages (they still wake the screen; alarms always vibrate). All are saved across reboots.
 
 If uploading fails or the USB port keeps reconnecting, enter download mode: hold **BOOT**,
 press **RST**, release **BOOT**, upload, then press **RST** to run.
