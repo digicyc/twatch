@@ -1,4 +1,5 @@
 #include "gps_app.h"
+#include "track.h"
 #include "ui.h"
 #include <LilyGoLib.h>
 #include <Preferences.h>
@@ -26,7 +27,7 @@ static bool clock_synced;
 static uint32_t clock_synced_ms;
 
 static lv_obj_t *home_screen, *screen, *power_switch, *status_label, *values[ROW_COUNT];
-static lv_obj_t *sats_count_label, *bars_cont;
+static lv_obj_t *sats_count_label, *bars_cont, *track_switch, *track_label;
 
 static bool online()
 {
@@ -169,6 +170,7 @@ void gps_tick()
         }
         sync_clock();
     }
+    track_tick();
 }
 
 // ---------- Screen ----------
@@ -253,6 +255,12 @@ static void update_screen()
         }
     }
     update_bars();
+
+    char track_text[48];
+    snprintf(track_text, sizeof(track_text), "%s, %d points today", activity_name(track_activity()), track_point_count());
+    if (strcmp(lv_label_get_text(track_label), track_text) != 0) {
+        lv_label_set_text(track_label, track_text);
+    }
 }
 
 static void refresh_cb(lv_timer_t *)
@@ -268,6 +276,11 @@ static void switch_cb(lv_event_t *)
     prefs.putBool("on", gps_on);
     gps_tick();
     update_screen();
+}
+
+static void track_switch_cb(lv_event_t *)
+{
+    track_set_recording(lv_obj_has_state(track_switch, LV_STATE_CHECKED));
 }
 
 static void back_cb(lv_event_t *)
@@ -310,6 +323,21 @@ static void build_screen()
     lv_obj_set_style_bg_color(power_switch, ORANGE, LV_PART_INDICATOR | LV_STATE_CHECKED);
     lv_obj_align(power_switch, LV_ALIGN_RIGHT_MID, 0, 0);
     lv_obj_add_event_cb(power_switch, switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    // Activity track: recorded to the SD card and drawn on the map.
+    lv_obj_t *track = make_card(cont);
+    lv_obj_set_height(track, 100);
+    lv_obj_t *track_name = make_label(track, "Record track", &lv_font_montserrat_28, lv_color_white());
+    lv_obj_align(track_name, LV_ALIGN_LEFT_MID, 0, -16);
+    track_label = make_label(track, "", &lv_font_montserrat_18, GRAY);
+    lv_label_set_long_mode(track_label, LV_LABEL_LONG_DOT);
+    lv_obj_set_size(track_label, 230, lv_font_get_line_height(&lv_font_montserrat_18));
+    lv_obj_align(track_label, LV_ALIGN_LEFT_MID, 0, 20);
+    track_switch = lv_switch_create(track);
+    lv_obj_set_size(track_switch, 90, 50);
+    lv_obj_set_style_bg_color(track_switch, ORANGE, LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_align(track_switch, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_add_event_cb(track_switch, track_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     // Position.
     lv_obj_t *pos = make_card(cont);
@@ -355,6 +383,10 @@ void gps_init(lv_obj_t *home)
     build_screen();
     if (gps_on) {
         lv_obj_add_state(power_switch, LV_STATE_CHECKED);
+    }
+    track_init();
+    if (track_recording()) {
+        lv_obj_add_state(track_switch, LV_STATE_CHECKED);
     }
 }
 

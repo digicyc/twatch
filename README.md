@@ -42,7 +42,11 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
   strength (green = used in the fix). While GPS is on, the watch face shows a satellite icon at the top
   right: gray with the satellites in view while searching, green with the satellites used once it
   has a fix. A fix also sets the clock from GPS time (then hourly while it lasts), so the time is
-  right away from Wi-Fi.
+  right away from Wi-Fi. **Record track** (on by default) shows the activity the motion sensor
+  detects (still, walking, running, cycling or driving) and, while GPS has a fix and you're moving,
+  saves a point every 10 m (at most every 3 s) labeled with that activity to
+  `/tracks/YYYY-MM-DD.csv` on the SD card (`time,lat,lon,activity`, with W/R/B/D for the
+  activity), one file per day. Without a card the day's track is kept until the watch restarts.
 - **SD Card** shows the card's size and free space, a **Test read & write** button (writes 256 KB,
   reads it back, checks it, deletes it, and reports speeds), and a file browser: tap folders to
   open them and text files to view their first 2 KB. Cards must be FAT32; if the card can't be read,
@@ -60,7 +64,9 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
   the tool refuses tile.openstreetmap.org, which forbids them too. Copy the `maps` folder to the
   root of the card from a computer. Tiles fill in one at a time (about 0.1 s each) the first time
   they're shown, and the next zoom level in and out is prepared in the background, so zooming is
-  usually immediate.
+  usually immediate. Today's activity track is drawn over the map as a breadcrumb trail colored by
+  activity (green walking, orange running, purple cycling, red driving), with a legend at the
+  bottom.
 - **Wi-Fi** has an on/off switch (off by default, saved across reboots), the connection status
   with IP address and signal, and the nearby networks strongest first (tap ⟳ to scan again). Tap a
   network to join it; secured ones ask for the password on the slide-up keyboard (the eye button
