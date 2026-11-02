@@ -47,6 +47,11 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
   saves a point every 10 m (at most every 3 s) labeled with that activity to
   `/tracks/YYYY-MM-DD.csv` on the SD card (`time,lat,lon,activity`, with W/R/B/D for the
   activity), one file per day. Without a card the day's track is kept until the watch restarts.
+- **Steps** counts steps with the motion sensor's built-in step counter, all the time and without
+  GPS. A ring fills toward the daily goal (orange, green once it's reached) around today's count,
+  with the estimated distance (2.5 ft per step) and percent of goal below it, a bar chart of the last
+  seven days, and **Daily goal** buttons (5k-15k, default 10k). The count restarts at local
+  midnight and is saved at most once a minute, so a restart loses at most a minute of steps.
 - **SD Card** shows the card's size and free space, a **Test read & write** button (writes 256 KB,
   reads it back, checks it, deletes it, and reports speeds), and a file browser: tap folders to
   open them and text files to view their first 2 KB. Cards must be FAT32; if the card can't be read,

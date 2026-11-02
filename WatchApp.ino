@@ -15,6 +15,7 @@
 #include "messenger.h"
 #include "sdcard_app.h"
 #include "settings_app.h"
+#include "steps_app.h"
 #include "wifi_app.h"
 
 // POSIX rule for America/Denver (MST/MDT).
@@ -22,6 +23,7 @@ static const char *TIME_ZONE = "MST7MDT,M3.2.0,M11.1.0";
 
 LV_FONT_DECLARE(font_alibaba_100);
 LV_IMAGE_DECLARE(satellite_icon);
+LV_IMAGE_DECLARE(steps_icon);
 LV_IMAGE_DECLARE(wifi_icon_1);
 LV_IMAGE_DECLARE(wifi_icon_2);
 LV_IMAGE_DECLARE(wifi_icon_3);
@@ -149,8 +151,9 @@ static void show_face()
     }
 }
 
-// Adds a round icon button with a caption to the launcher grid (four per row).
-static void add_app(lv_obj_t *grid, const char *symbol, const char *name, lv_color_t color, lv_event_cb_t cb)
+// Adds a round icon button with a caption to the launcher grid (four per row). The icon is a symbol
+// or an alpha-only image.
+static void add_app(lv_obj_t *grid, const void *icon_src, const char *name, lv_color_t color, lv_event_cb_t cb)
 {
     lv_obj_t *item = lv_obj_create(grid);
     lv_obj_remove_style_all(item);
@@ -165,10 +168,12 @@ static void add_app(lv_obj_t *grid, const char *symbol, const char *name, lv_col
     lv_obj_set_style_bg_color(btn, color, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
     lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *icon = lv_label_create(btn);
-    lv_label_set_text(icon, symbol);
-    lv_obj_set_style_text_font(icon, &lv_font_montserrat_36, 0);
+    lv_obj_t *icon = lv_image_create(btn);
+    lv_image_set_src(icon, icon_src);
+    lv_obj_set_style_text_font(icon, &lv_font_montserrat_36, 0);  // for symbols
     lv_obj_set_style_text_color(icon, lv_color_black(), 0);
+    lv_obj_set_style_image_recolor(icon, lv_color_black(), 0);  // for images
+    lv_obj_set_style_image_recolor_opa(icon, LV_OPA_COVER, 0);
     lv_obj_center(icon);
 
     lv_obj_t *caption = lv_label_create(item);
@@ -188,8 +193,8 @@ static void build_launcher(lv_obj_t *page)
     lv_obj_set_size(grid, LV_PCT(100), LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(grid, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-    lv_obj_set_style_pad_row(grid, 30, 0);
-    lv_obj_align(grid, LV_ALIGN_TOP_MID, 0, 110);
+    lv_obj_set_style_pad_row(grid, 16, 0);
+    lv_obj_align(grid, LV_ALIGN_TOP_MID, 0, 92);
 
     add_app(grid, LV_SYMBOL_BELL, "Alarms", lv_palette_main(LV_PALETTE_ORANGE), [](lv_event_t *) {
         alarms_open();
@@ -199,6 +204,9 @@ static void build_launcher(lv_obj_t *page)
     });
     add_app(grid, LV_SYMBOL_GPS, "GPS", lv_palette_main(LV_PALETTE_GREEN), [](lv_event_t *) {
         gps_open();
+    });
+    add_app(grid, &steps_icon, "Steps", lv_palette_main(LV_PALETTE_RED), [](lv_event_t *) {
+        steps_open();
     });
     add_app(grid, LV_SYMBOL_IMAGE, "Map", lv_palette_main(LV_PALETTE_TEAL), [](lv_event_t *) {
         map_open();
@@ -339,6 +347,7 @@ void setup()
     }
     messages_init(home_screen);
     bluetooth_init(home_screen);
+    steps_init(home_screen);
     settings_init(home_screen);
 
     wake_shield = lv_obj_create(lv_layer_top());
@@ -378,6 +387,7 @@ void loop()
     handle_serial();
     alarms_tick();
     gps_tick();
+    steps_tick();
     messenger_loop();
     update_screen_power();
     lv_timer_handler();
