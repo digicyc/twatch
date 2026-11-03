@@ -16,6 +16,7 @@
 #include "sdcard_app.h"
 #include "settings_app.h"
 #include "steps_app.h"
+#include "weather_app.h"
 #include "wifi_app.h"
 
 // POSIX rule for America/Denver (MST/MDT).
@@ -24,6 +25,7 @@ static const char *TIME_ZONE = "MST7MDT,M3.2.0,M11.1.0";
 LV_FONT_DECLARE(font_alibaba_100);
 LV_IMAGE_DECLARE(satellite_icon);
 LV_IMAGE_DECLARE(steps_icon);
+LV_IMAGE_DECLARE(weather_app_icon);
 LV_IMAGE_DECLARE(wifi_icon_1);
 LV_IMAGE_DECLARE(wifi_icon_2);
 LV_IMAGE_DECLARE(wifi_icon_3);
@@ -37,6 +39,7 @@ static lv_obj_t *battery_label;
 static lv_obj_t *battery_bar;
 static lv_obj_t *gps_box, *gps_icon, *gps_label;  // satellite icon and count, top right
 static lv_obj_t *wifi_icon;                        // Wi-Fi signal, top left
+static lv_obj_t *weather_box, *weather_icon, *weather_label;  // conditions and temperature, under the date
 static lv_timer_t *face_timer;
 static lv_obj_t *home_screen;
 static lv_obj_t *tileview;  // page 0 is the watch face, page 1 the app launcher
@@ -102,6 +105,18 @@ static void update_face(lv_timer_t *)
         lv_obj_remove_flag(wifi_icon, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(wifi_icon, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    // Weather: hidden until there's a forecast covering now.
+    int temp_f;
+    uint8_t code;
+    bool is_day;
+    if (weather_now(temp_f, code, is_day)) {
+        weather_icon_set(weather_icon, code, is_day);
+        lv_label_set_text_fmt(weather_label, "%d\xC2\xB0" "F", temp_f);
+        lv_obj_remove_flag(weather_box, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(weather_box, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -207,6 +222,9 @@ static void build_launcher(lv_obj_t *page)
     });
     add_app(grid, &steps_icon, "Steps", lv_palette_main(LV_PALETTE_RED), [](lv_event_t *) {
         steps_open();
+    });
+    add_app(grid, &weather_app_icon, "Weather", lv_palette_main(LV_PALETTE_CYAN), [](lv_event_t *) {
+        weather_open();
     });
     add_app(grid, LV_SYMBOL_IMAGE, "Map", lv_palette_main(LV_PALETTE_TEAL), [](lv_event_t *) {
         map_open();
@@ -335,6 +353,17 @@ void setup()
     lv_obj_set_style_text_color(date_label, lv_color_hex(0x9E9E9E), 0);
     lv_obj_align(date_label, LV_ALIGN_CENTER, 0, 118);
 
+    weather_box = lv_obj_create(face);
+    lv_obj_remove_style_all(weather_box);
+    lv_obj_set_size(weather_box, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(weather_box, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(weather_box, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(weather_box, 8, 0);
+    lv_obj_align(weather_box, LV_ALIGN_CENTER, 0, 172);
+    weather_icon = weather_icon_create(weather_box);
+    weather_label = lv_label_create(weather_box);
+    lv_obj_set_style_text_font(weather_label, &lv_font_montserrat_28, 0);
+
     update_face(NULL);
     face_timer = lv_timer_create(update_face, 1000, NULL);
     alarms_init(home_screen);
@@ -348,6 +377,7 @@ void setup()
     messages_init(home_screen);
     bluetooth_init(home_screen);
     steps_init(home_screen);
+    weather_init(home_screen);
     settings_init(home_screen);
 
     wake_shield = lv_obj_create(lv_layer_top());
@@ -388,6 +418,7 @@ void loop()
     alarms_tick();
     gps_tick();
     steps_tick();
+    weather_tick();
     messenger_loop();
     update_screen_power();
     lv_timer_handler();

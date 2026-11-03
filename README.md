@@ -52,6 +52,17 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
   with the estimated distance (2.5 ft per step) and percent of goal below it, a bar chart of the last
   seven days, and **Daily goal** buttons (5k-15k, default 10k). The count restarts at local
   midnight and is saved at most once a minute, so a restart loses at most a minute of steps.
+- **Weather** shows the current conditions (temperature, feels-like, today's high and low,
+  humidity, wind, sunrise and sunset), the next 12 hours (drag sideways) and 5 days, in °F and
+  mph. Over Wi-Fi it gets the forecast from [Open-Meteo](https://open-meteo.com) (free, no key)
+  for the GPS position, rounded to about 1 km, over HTTPS. Without a fix it keeps using the place
+  of the last forecast. It updates every 30 minutes, after moving 10 km, or when you tap ⟳, and
+  waits 5 minutes after a failure. The last forecast is saved, so it shows right away after a
+  reboot. The watch face shows a small condition icon and the temperature in °F under the date:
+  the latest conditions, or once those are over an hour old, the forecast for the current hour
+  (hidden when the forecast has run out). The forecast is kept as a source-independent
+  `WeatherData` (`weather_set()` in `weather_app.h`), ready for a phone app to send weather over
+  Bluetooth later.
 - **SD Card** shows the card's size and free space, a **Test read & write** button (writes 256 KB,
   reads it back, checks it, deletes it, and reports speeds), and a file browser: tap folders to
   open them and text files to view their first 2 KB. Cards must be FAT32; if the card can't be read,

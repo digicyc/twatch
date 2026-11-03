@@ -19,9 +19,9 @@ FQBN  := esp32:esp32:twatch_ultra:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=def
 
 .PHONY: deps build upload monitor flash settime ports clean
 
-# Arduino libraries MeshCore needs beyond LilyGoLib-ThirdParty.
+# Arduino libraries MeshCore and the Weather app need beyond LilyGoLib-ThirdParty.
 deps:
-	arduino-cli lib install "Crypto@0.4.0" "base64@1.3.0" "RTClib@2.1.4" "CayenneLPP@1.6.1"
+	arduino-cli lib install "ArduinoJson@7.4.3" "Crypto@0.4.0" "base64@1.3.0" "RTClib@2.1.4" "CayenneLPP@1.6.1"
 
 build:
 	arduino-cli compile --fqbn '$(FQBN)' --build-path $(BUILD) \
