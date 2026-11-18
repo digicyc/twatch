@@ -9,7 +9,8 @@ void gps_init(lv_obj_t *home);
 void gps_open();
 
 // Call every loop: applies the on/off setting to the receiver and keeps the satellite list fresh.
-void gps_tick();
+// With the screen off and no track recording, the receiver mostly sleeps.
+void gps_tick(bool screen_on);
 
 struct GpsStatus {
     bool on;         // the user's setting

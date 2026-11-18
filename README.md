@@ -42,7 +42,9 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
   strength (green = used in the fix). While GPS is on, the watch face shows a satellite icon at the top
   right: gray with the satellites in view while searching, green with the satellites used once it
   has a fix. A fix also sets the clock from GPS time (then hourly while it lasts), so the time is
-  right away from Wi-Fi. **Record track** (on by default) shows the activity the motion sensor
+  right away from Wi-Fi. To save battery, the receiver only runs while the screen is on or a track
+  is recording; otherwise it sleeps, waking for a minute every half hour to keep its satellite data
+  fresh, and it uses u-blox's cyclic-tracking power save mode. **Record track** (on by default) shows the activity the motion sensor
   detects (still, walking, running, cycling or driving) and, while GPS has a fix and you're moving,
   saves a point every 10 m (at most every 3 s) labeled with that activity to
   `/tracks/YYYY-MM-DD.csv` on the SD card (`time,lat,lon,activity`, with W/R/B/D for the
@@ -102,7 +104,7 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
   75 KB of the internal RAM, so turn it off if you don't use the phone app. A rename on the watch
   updates the Bluetooth name right away; a rename or PIN change from the app takes effect after a
   reboot.
-- **Settings** has a **Brightness** slider (10-100%) for the screen, which changes as you drag,
+- **Settings** has a **Brightness** slider (10-100%, 50% by default) for the screen, which changes as you drag,
   and **Screen timeout**: how long the screen stays on without input (5 s to 2 min, 10 s by
   default), and **Notifications**: turn off **Vibrate for messages** to stop the buzz for new
   messages (they still wake the screen; alarms always vibrate). All are saved across reboots.

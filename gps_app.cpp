@@ -7,6 +7,8 @@
 
 static const uint32_t FIX_MAX_AGE_MS = 5000;  // older positions are from before the GPS lost its fix
 static const uint32_t CLOCK_SYNC_INTERVAL_MS = 3600000;  // re-set the clock hourly while there's a fix
+static const uint32_t IDLE_WAKE_INTERVAL_MS = 30 * 60000;  // while idle, wake the receiver this often
+static const uint32_t IDLE_WAKE_MS = 60000;                // for this long, to keep its satellite data fresh
 static const int MAX_BARS = 12;               // satellites shown, strongest first; fills the card
 static const int BAR_MAX_HEIGHT = 100;        // px for a C/N0 of FULL_CN0 or more
 static const int FULL_CN0 = 50;               // dB-Hz
@@ -25,6 +27,7 @@ static uint32_t chars_at_wake;
 static GNSSSatelliteInfo sats[GNSS_MAX_SATELLITES];
 static bool clock_synced;
 static uint32_t clock_synced_ms;
+static uint32_t idle_wake_ms;  // when the current idle wake started
 
 static lv_obj_t *home_screen, *screen, *power_switch, *status_label, *values[ROW_COUNT];
 static lv_obj_t *sats_count_label, *bars_cont, *track_switch, *track_label;
@@ -108,6 +111,30 @@ static void receiver_wake()
     Serial1.write(WAKE, sizeof(WAKE));
 }
 
+// Fills in a UBX message's checksum (its last two bytes) and sends it.
+static void send_ubx(uint8_t *msg, size_t len)
+{
+    uint8_t a = 0, b = 0;
+    for (size_t i = 2; i < len - 2; i++) {
+        a += msg[i];
+        b += a;
+    }
+    msg[len - 2] = a;
+    msg[len - 1] = b;
+    Serial1.write(msg, len);
+}
+
+// Cyclic tracking power save (UBX-CFG-VALSET CFG-PM-OPERATEMODE = PSMCT): once it has a good fix,
+// the receiver tracks at reduced power between its 1 Hz updates. Saved in RAM and battery-backed RAM.
+static void send_power_save()
+{
+    uint8_t msg[8 + 9] = {0xB5, 0x62, 0x06, 0x8A, 9, 0,
+                          0x00, 0x03, 0x00, 0x00,   // version, layers RAM | BBR, reserved
+                          0x01, 0x00, 0xD0, 0x20,   // key 0x20d00001
+                          0x02};                    // PSMCT
+    send_ubx(msg, sizeof(msg));
+}
+
 // The receiver keeps its satellite data while off but not the time, and finding the time from the
 // satellites takes ~15 s. Telling it the watch's time (UBX-MGA-INI-TIME_UTC) lets it use that data
 // straight away.
@@ -131,28 +158,27 @@ static void send_time_aid()
     p[9] = utc.tm_min;
     p[10] = utc.tm_sec;
     p[16] = 2;                  // accuracy: 2 s
-    uint8_t a = 0, b = 0;
-    for (int i = 2; i < 6 + 24; i++) {
-        a += msg[i];
-        b += a;
-    }
-    msg[30] = a;
-    msg[31] = b;
-    Serial1.write(msg, sizeof(msg));
+    send_ubx(msg, sizeof(msg));
 }
 
-void gps_tick()
+void gps_tick(bool screen_on)
 {
     GPS &gps = instance.gps;
+    // The receiver runs while the screen is on or a track is recording. Otherwise it sleeps, waking
+    // for a minute every half hour so a fix comes quickly when the screen next turns on.
+    if (millis() - idle_wake_ms >= IDLE_WAKE_INTERVAL_MS) {
+        idle_wake_ms = millis();
+    }
+    bool want = gps_on && (screen_on || track_recording() || millis() - idle_wake_ms < IDLE_WAKE_MS);
     // Switch off only after LilyGoLib's boot-time probe finishes, or the receiver never comes online.
-    if (!gps_on && running && gps.probeDone()) {
+    if (!want && running && gps.probeDone()) {
         if (online()) {
             receiver_sleep();
         } else {
             instance.powerControl(POWER_GPS, false);  // nothing answered the probe
         }
         running = false;
-    } else if (gps_on && !running) {
+    } else if (want && !running) {
         if (online()) {
             receiver_wake();
             aid_pending = true;
@@ -164,8 +190,9 @@ void gps_tick()
     }
     if (running && online()) {
         gps.loop();  // instance.loop() parses NMEA; this also drops satellites unheard for 5 s
-        if (aid_pending && gps_on && gps.charsProcessed() != chars_at_wake) {
+        if (aid_pending && want && gps.charsProcessed() != chars_at_wake) {
             aid_pending = false;
+            send_power_save();
             send_time_aid();
         }
         sync_clock();
@@ -274,7 +301,7 @@ static void switch_cb(lv_event_t *)
 {
     gps_on = lv_obj_has_state(power_switch, LV_STATE_CHECKED);
     prefs.putBool("on", gps_on);
-    gps_tick();
+    gps_tick(true);
     update_screen();
 }
 

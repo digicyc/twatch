@@ -9,6 +9,14 @@
 static const unsigned long ADV_RESTART_DELAY_MS = 1000;
 static const unsigned long WRITE_MIN_INTERVAL_MS = 60;  // space notifications like MeshCore does
 
+// Advertise every 417.5 ms (in 0.625 ms units), one of Apple's recommended intervals, instead of the
+// stack's default of 30-60 ms; the phone takes a little longer to find the watch.
+static const uint16_t ADV_INTERVAL = 668;
+// Once paired, ask for a 30-45 ms connection interval (in 1.25 ms units) with a latency of 4, so the
+// watch can skip up to 4 idle connection events (about 225 ms), and a 4 s supervision timeout (in
+// 10 ms units). iOS otherwise uses 30 ms with no latency; these fit Apple's accessory guidelines.
+static const uint16_t CONN_INTERVAL_MIN = 24, CONN_INTERVAL_MAX = 36, CONN_LATENCY = 4, CONN_TIMEOUT = 400;
+
 MeshBLE::MeshBLE()
     : pin(0), hook(NULL), server(NULL), service(NULL), tx(NULL), connected(false), was_connected(false),
       enabled(false), skip_enable(false), conn_handle(0), last_write(0), adv_restart_at(0), send_len(0)
@@ -45,7 +53,10 @@ void MeshBLE::startStack()
         RX_UUID, BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_ENC | BLECharacteristic::PROPERTY_WRITE_AUTHEN);
     rx->setCallbacks(this);
     service->start();
-    server->getAdvertising()->addServiceUUID(SERVICE_UUID);
+    BLEAdvertising *adv = server->getAdvertising();
+    adv->addServiceUUID(SERVICE_UUID);
+    adv->setMinInterval(ADV_INTERVAL);
+    adv->setMaxInterval(ADV_INTERVAL);
 }
 
 void MeshBLE::setName(const char *name)
@@ -67,6 +78,7 @@ void MeshBLE::onAuthenticationComplete(ble_gap_conn_desc *desc)
 {
     if (desc->sec_state.encrypted && desc->sec_state.authenticated) {
         connected = true;
+        server->requestConnParams(desc->conn_handle, CONN_INTERVAL_MIN, CONN_INTERVAL_MAX, CONN_LATENCY, CONN_TIMEOUT);
     } else {
         server->disconnect(desc->conn_handle);
     }

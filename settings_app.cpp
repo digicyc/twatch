@@ -5,6 +5,7 @@
 
 static const lv_color_t ORANGE = LV_COLOR_MAKE(0xFF, 0x98, 0x00);  // lv_palette_main(LV_PALETTE_ORANGE)
 static const int MIN_PERCENT = 10;  // dimmer than this is hard to read outdoors and looks off
+static const int DEFAULT_PERCENT = 50;  // the AMOLED's power rises steeply with brightness
 
 static const uint16_t TIMEOUTS_S[] = {5, 10, 15, 30, 60, 120};
 static const char *const TIMEOUT_MAP[] = {"5s", "10s", "15s", "30s", "1m", "2m", ""};
@@ -83,7 +84,7 @@ void settings_init(lv_obj_t *home)
 {
     home_screen = home;
     prefs.begin("settings");
-    brightness_percent = constrain(prefs.getUChar("bright", 100), MIN_PERCENT, 100);
+    brightness_percent = constrain(prefs.getUChar("bright", DEFAULT_PERCENT), MIN_PERCENT, 100);
     message_vibrate = prefs.getBool("msg_buzz", true);
     uint16_t timeout_s = prefs.getUShort("timeout", TIMEOUTS_S[DEFAULT_TIMEOUT]);
     timeout_index = DEFAULT_TIMEOUT;

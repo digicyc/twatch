@@ -22,6 +22,13 @@
 // POSIX rule for America/Denver (MST/MDT).
 static const char *TIME_ZONE = "MST7MDT,M3.2.0,M11.1.0";
 
+// With the screen off the watch only runs the mesh, Bluetooth and GPS, which need far less CPU;
+// 80 MHz is the lowest clock Bluetooth allows. The loop also runs less often then.
+static const uint32_t SCREEN_ON_CPU_MHZ = 240;
+static const uint32_t SCREEN_OFF_CPU_MHZ = 80;
+static const uint32_t SCREEN_ON_LOOP_MS = 5;
+static const uint32_t SCREEN_OFF_LOOP_MS = 20;  // under the shortest LoRa packet's airtime, so none is missed
+
 LV_FONT_DECLARE(font_alibaba_100);
 LV_IMAGE_DECLARE(satellite_icon);
 LV_IMAGE_DECLARE(steps_icon);
@@ -141,7 +148,9 @@ static void update_screen_power()
         instance.setBrightness(0);
         instance.sleepDisplay();
         lv_obj_remove_flag(wake_shield, LV_OBJ_FLAG_HIDDEN);
+        setCpuFrequencyMhz(SCREEN_OFF_CPU_MHZ);
     } else if (!idle && !screen_on) {
+        setCpuFrequencyMhz(SCREEN_ON_CPU_MHZ);
         screen_on = true;
         // A waking touch is still on the shield and hides it when lifted; buttons and messages
         // don't touch it, so hide it now.
@@ -276,12 +285,31 @@ static void handle_serial()
     }
 }
 
+// begin() leaves the speaker amplifier and NFC reader powered. The amplifier powers itself back up
+// when an alarm plays. The NFC reader shares the LoRa radio's SPI bus, so cutting its power would
+// let the bus power it through its pins; instead it goes into its own power-down mode (operation
+// control register 0x02 cleared), in case an earlier firmware left it running.
+static void power_down_unused()
+{
+    instance.powerControl(POWER_SPEAK, false);
+    SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE1));
+    digitalWrite(NFC_CS, LOW);
+    SPI.transfer(0x02);  // write mode (top bits 00), register address
+    SPI.transfer(0x00);
+    digitalWrite(NFC_CS, HIGH);
+    SPI.endTransaction();
+}
+
 void setup()
 {
     Serial.begin(115200);
 
     // begin() loads the RTC into the system clock; TZ is still unset here, so it is read as UTC.
-    instance.begin();
+    // NFC isn't used: its reader would keep its oscillator running once initialized.
+    LilyGoDeviceInitOptions options = instance.getDefaultInitOptions();
+    options.initNfc = false;
+    instance.begin(options);
+    power_down_unused();
     setenv("TZ", TIME_ZONE, 1);
     tzset();
 
@@ -416,11 +444,11 @@ void loop()
     instance.loop();  // dispatches PMU and button events
     handle_serial();
     alarms_tick();
-    gps_tick();
+    gps_tick(screen_on);
     steps_tick();
     weather_tick();
     messenger_loop();
     update_screen_power();
     lv_timer_handler();
-    delay(5);
+    delay(screen_on ? SCREEN_ON_LOOP_MS : SCREEN_OFF_LOOP_MS);
 }
