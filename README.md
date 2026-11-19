@@ -1,120 +1,115 @@
 # WatchApp
 
-Arduino sketch for the LilyGo T-Watch Ultra, built with `arduino-cli`, ESP32 core 3.3.10,
-`../LilyGoLib`, and `../LilyGoLib-ThirdParty`. The code is in `src/` (`setup()` and `loop()` are in
-`src/main.cpp`); `WatchApp.ino` is only the stub file Arduino requires, `lib/MeshCore` is the copy
-of MeshCore it builds with, and `tools/` has the scripts that generate the images in `src/`.
+Firmware for the LilyGo T-Watch Ultra: a watch face with app launcher, MeshCore LoRa messaging that
+also works as a companion radio for the MeshCore phone app, offline topo maps, GPS with activity
+tracks, a step counter, weather, alarms, Wi-Fi, SD card and settings.
+
+## Screenshots
+
+| | | | |
+|:-:|:-:|:-:|:-:|
+| ![Watch face](docs/screenshots/face.png) | ![Apps](docs/screenshots/launcher.png) | ![Messages](docs/screenshots/messages.png) | ![Map](docs/screenshots/map.png) |
+| Watch face | Apps | Messages | Map |
+| ![GPS](docs/screenshots/gps.png) | ![Steps](docs/screenshots/steps.png) | ![Weather](docs/screenshots/weather.png) | ![Alarms](docs/screenshots/alarms.png) |
+| GPS | Steps | Weather | Alarms |
+| ![SD Card](docs/screenshots/sdcard.png) | ![Settings](docs/screenshots/settings.png) | | |
+| SD Card | Settings | | |
+
+Captured from a T-Watch Ultra with `make screenshot`.
+
+## Building from source
+
+Built with `arduino-cli`, ESP32 core 3.3.10, `../LilyGoLib` and `../LilyGoLib-ThirdParty`. The code
+is in `src/` (`setup()` and `loop()` are in `src/main.cpp`); `WatchApp.ino` is only the stub file
+Arduino requires, `lib/MeshCore` is the copy of MeshCore it builds with, and `tools/` has the scripts
+that generate the images in `src/`. Arduino needs the project's folder to be named `WatchApp`, like
+the `.ino`, so clone it next to LilyGoLib with `git clone git@github.com:digicyc/twatch.git WatchApp`.
 
 ```sh
+make deps               # once: Arduino libraries MeshCore and the Weather app need
 make build              # compile into ./build
-make upload             # flash (auto-detects /dev/ttyACM*, or pass PORT=...)
+make upload             # flash (finds the watch's USB port, or pass PORT=/dev/ttyACMx)
 make monitor            # serial console at 115200
 make flash              # build + upload + monitor
-make settime            # set the watch's RTC from this computer's clock (sketch must be running;
-                        # not needed once the watch has Wi-Fi or a GPS fix, which set it)
+make settime            # set the clock from this computer (GPS, Wi-Fi and the phone app also set it)
+make screenshot         # save the screen to screenshot.png (OUT=file.png); needs uv
 make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX1262
 ```
 
-## Using the watch
+If uploading fails or the USB port keeps reconnecting, enter download mode: hold **BOOT**, press
+**RST**, release **BOOT**, upload, then press **RST** to run. `build/compile_commands.json` works
+with clangd for editor completion.
 
-- The screen turns off after 10 s without input (change it in Settings); tap it or press PWR or BOOT to wake it. A tap or
-  PWR wakes it on the screen you left (the waking tap doesn't press anything). A quick press of
-  PWR while the screen is on turns it off right away (a ringing alarm keeps it on).
-- **BOOT** goes straight back to the watch face from any app or the Apps page, waking the screen
-  if needed. It does nothing while an alarm is ringing, so Snooze/Stop stay on screen.
-- Swipe up on the watch face for Apps. **Alarms** lists your alarms (up to 8): tap one to edit
-  or delete it, use its switch to turn it on/off, and tap **+** to add one. In the editor, pick
-  repeat days (or tap Weekdays / Weekends / Daily); with no days selected the alarm rings once and
-  then switches itself off. Alarms wake the screen, vibrate and beep, and stop after 1 minute;
-  **Snooze** waits 5 minutes.
-- Alarms are saved in flash (NVS) and survive reboots and reflashing.
-- **Messages** talks to MeshCore nodes over LoRa (USA/Canada preset, 910.525 MHz). It lists the
-  Public channel and a chat for each MeshCore companion that has advertised nearby, with unread
-  counts. New messages buzz (unless turned off in Settings) and wake the screen. Tap a chat to read it and the pencil button to
-  reply: pick a quick reply, or **Type a message** for a slide-up keyboard (one-shot shift,
-  **1#** for numbers and punctuation, then **#+=** for the rest of the symbols, ✓ to send). Direct
-  messages show Sending / Sent / Delivered / Failed. Tap the signal icon in the list to advertise
-  this watch so others can add it. The **This watch** card at the bottom of the list shows the
-  name others see (TWatch-XXXX by default); tap it to rename the watch, which also re-advertises
-  it. Chats are saved on the FFat partition. The watch runs MeshCore's companion radio firmware, so
-  its contacts, channels and radio settings are the ones the MeshCore phone app shows.
-- **GPS** has an on/off switch (saved across reboots; off puts the receiver in its low-power
-  backup mode, where it keeps its satellite data, so turning it back on gets a fix in about 10 s),
-  the current position, altitude, speed and HDOP, and a bar per satellite showing signal
-  strength (green = used in the fix). While GPS is on, the watch face shows a satellite icon at the top
-  right: gray with the satellites in view while searching, green with the satellites used once it
-  has a fix. A fix also sets the clock from GPS time (then hourly while it lasts), so the time is
-  right away from Wi-Fi. To save battery, the receiver only runs while the screen is on or a track
-  is recording; otherwise it sleeps, waking for a minute every half hour to keep its satellite data
-  fresh, and it uses u-blox's cyclic-tracking power save mode. **Record track** (on by default) shows the activity the motion sensor
-  detects (still, walking, running, cycling or driving) and, while GPS has a fix and you're moving,
-  saves a point every 10 m (at most every 3 s) labeled with that activity to
-  `/tracks/YYYY-MM-DD.csv` on the SD card (`time,lat,lon,activity`, with W/R/B/D for the
-  activity), one file per day. Without a card the day's track is kept until the watch restarts.
-- **Steps** counts steps with the motion sensor's built-in step counter, all the time and without
-  GPS. A ring fills toward the daily goal (orange, green once it's reached) around today's count,
-  with the estimated distance (2.5 ft per step) and percent of goal below it, a bar chart of the last
-  seven days, and **Daily goal** buttons (5k-15k, default 10k). The count restarts at local
-  midnight and is saved at most once a minute, so a restart loses at most a minute of steps.
-- **Weather** shows the current conditions (temperature, feels-like, today's high and low,
-  humidity, wind, sunrise and sunset), the next 12 hours (drag sideways) and 5 days, in °F and
-  mph. Over Wi-Fi it gets the forecast from [Open-Meteo](https://open-meteo.com) (free, no key)
-  for the GPS position, rounded to about 1 km, over HTTPS. Without a fix it keeps using the place
-  of the last forecast. It updates every 30 minutes, after moving 10 km, or when you tap ⟳, and
-  waits 5 minutes after a failure. The last forecast is saved, so it shows right away after a
-  reboot. The watch face shows a small condition icon and the temperature in °F under the date:
-  the latest conditions, or once those are over an hour old, the forecast for the current hour
-  (hidden when the forecast has run out). The forecast is kept as a source-independent
-  `WeatherData` (`weather_set()` in `src/weather_app.h`), ready for a phone app to send weather over
-  Bluetooth later.
-- **SD Card** shows the card's size and free space, a **Test read & write** button (writes 256 KB,
-  reads it back, checks it, deletes it, and reports speeds), and a file browser: tap folders to
-  open them and text files to view their first 2 KB. Cards must be FAT32; if the card can't be read,
-  **Format card** erases it and formats it FAT32. Inserting or removing the card while the app is
-  open remounts it.
-- **Map** shows offline map tiles from the SD card with your GPS position as a blue dot. Drag to
-  pan, **+**/**−** step through the zoom levels on the card, and the arrow button re-centers on
-  you and follows (orange while following). Tiles are standard 256 px web map tiles at
-  `/maps/<zoom>/<x>/<y>.png` (or baseline `.jpg`). `tools/download_map_tiles.py` downloads an area
-  into that layout from a source whose terms allow offline use, such as the public-domain USGS Topo
-  map (US only, no key): `python3 tools/download_map_tiles.py --center LAT,LON --radius-km 10
-  --zoom 10-16 --url
-  'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}'`
-  (about 2,800 tiles, 31 MB). Free plans of MapTiler and Thunderforest forbid bulk downloads, and
-  the tool refuses tile.openstreetmap.org, which forbids them too. Copy the `maps` folder to the
-  root of the card from a computer. Tiles fill in one at a time (about 0.1 s each) the first time
-  they're shown, and the next zoom level in and out is prepared in the background, so zooming is
-  usually immediate. Today's activity track is drawn over the map as a breadcrumb trail colored by
-  activity (green walking, orange running, purple cycling, red driving), with a legend at the
-  bottom.
-- **Wi-Fi** has an on/off switch (off by default, saved across reboots), the connection status
-  with IP address and signal, and the nearby networks strongest first (tap ⟳ to scan again). Tap a
-  network to join it; secured ones ask for the password on the slide-up keyboard (the eye button
-  shows it). A network that joins becomes the saved network, which the watch reconnects to at
-  boot and whenever it's back in range; **Forget** removes it. A failed join says why (wrong
-  password, network not found, or timed out) and goes back to the saved network. While connected,
-  the watch face shows a green Wi-Fi icon at the top left whose lit arcs show the signal strength.
-  Connecting also sets the clock from internet time (NTP), and it re-syncs every hour while
-  connected; the **Time synced** row shows when that last happened.
+## Using it
 
-- **Bluetooth** lets the MeshCore phone app use the watch as its radio, like any MeshCore
-  companion node. It has an on/off switch (on by default, saved across reboots) and shows the
-  status, the name the app lists (**MeshCore-** plus the watch name) and the six-digit PIN to
-  enter when pairing. In the app, tap Connect, choose the watch, and enter the PIN. Messages sent
-  from the phone to the Public channel or to a companion also appear in the watch's chats, and
-  messages received while the phone is away are queued for it (up to 16). Bluetooth uses about
-  75 KB of the internal RAM, so turn it off if you don't use the phone app. A rename on the watch
-  updates the Bluetooth name right away; a rename or PIN change from the app takes effect after a
-  reboot.
-- **Settings** has a **Brightness** slider (10-100%, 50% by default) for the screen, which changes as you drag,
-  and **Screen timeout**: how long the screen stays on without input (5 s to 2 min, 10 s by
-  default), and **Notifications**: turn off **Vibrate for messages** to stop the buzz for new
-  messages (they still wake the screen; alarms always vibrate). All are saved across reboots.
+- **Screen and buttons.** The screen turns off after the Settings timeout (10 s by default); a tap,
+  PWR or BOOT wakes it where you left it, and the waking tap doesn't press anything. A quick press
+  of PWR turns the screen off right away. **BOOT** goes back to the watch face from anywhere,
+  except while an alarm rings. Swipe up on the face for the apps.
+- **Watch face**: time, date, battery, a Wi-Fi icon while connected, GPS satellites (gray while
+  searching, green with a fix), and the current weather.
+- **Messages** (MeshCore over LoRa, USA/Canada preset, 910.525 MHz): the Public channel and a chat
+  for each companion that has advertised nearby, with unread counts. New messages buzz (Settings can
+  turn that off) and wake the screen. Reply with a quick reply or the slide-up keyboard; direct
+  messages show Sending / Sent / Delivered / Failed. The signal icon advertises this watch, and the
+  **This watch** card sets the name others see (TWatch-XXXX by default). Chats are kept on the FFat
+  partition.
+- **Bluetooth** lets the MeshCore phone app use the watch as its radio. It shows the name the app
+  lists (**MeshCore-** plus the watch name) and the six-digit PIN to enter when pairing. Messages
+  sent from the phone also appear in the watch's chats, and up to 16 received while the phone is
+  away are queued for it. Bluetooth uses about 75 KB of internal RAM; turn it off if you don't use
+  the phone app.
+- **Map** shows offline tiles from the SD card with your position as a blue dot and today's
+  activity track as a trail colored by activity. Drag to pan, **+**/**−** step through the zoom
+  levels on the card, and the arrow re-centers on you and follows. Tiles are standard 256 px web
+  map tiles at `/maps/<zoom>/<x>/<y>.png` (or baseline `.jpg`); `tools/download_map_tiles.py`
+  downloads an area from a source that allows offline use, such as the public-domain USGS Topo map
+  (US only, no key), and you copy its `maps` folder to the card:
 
-If uploading fails or the USB port keeps reconnecting, enter download mode: hold **BOOT**,
-press **RST**, release **BOOT**, upload, then press **RST** to run.
+  ```sh
+  python3 tools/download_map_tiles.py --center LAT,LON --radius-km 10 --zoom 10-16 \
+      --url 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}'
+  ```
 
-`build/compile_commands.json` can be used by clangd for editor completion.
+  `--bbox west,south,east,north` takes an area instead, for example a low-detail overview of a
+  state or the whole country. The tool refuses tile.openstreetmap.org, whose terms forbid bulk
+  downloads (as do the free plans of MapTiler and Thunderforest).
+- **GPS**: on/off switch, position, altitude, speed, HDOP, and signal bars per satellite. A fix sets
+  the clock (then hourly). To save battery the receiver only runs while the screen is on or a track
+  is recording; otherwise it sleeps in u-blox backup mode, waking for a minute every half hour to
+  keep its satellite data fresh, so a fix comes back in about 10 s. **Record track** (on by
+  default) saves a point every 10 m while you move, labeled with the activity the motion sensor
+  detects (walking, running, cycling, driving), to `/tracks/YYYY-MM-DD.csv` on the SD card.
+- **Steps** uses the motion sensor's step counter, all day and without GPS: a ring toward the daily
+  goal (5k-15k, 10k by default), distance, and the last seven days. It restarts at local midnight.
+- **Weather** gets an [Open-Meteo](https://open-meteo.com) forecast (free, no key) over Wi-Fi for
+  your GPS position, rounded to about 1 km: current conditions, the next 12 hours and 5 days, in °F
+  and mph. It updates every 30 minutes, after moving 10 km, or when you tap ⟳, and the last forecast
+  is kept across reboots.
+- **Alarms**: up to 8, with repeat days (none rings once). They wake the screen, vibrate and beep
+  for a minute; **Snooze** waits 5 minutes. Saved in flash, so they survive reflashing.
+- **Wi-Fi** (off by default): join a network with the slide-up keyboard; the watch reconnects to it
+  at boot and when it's back in range, and **Forget** removes it. Connecting sets the clock from
+  internet time, re-synced hourly.
+- **SD Card**: size and free space, a read/write speed test, a file browser and text viewer, and
+  **Format card** (FAT32) for a card that can't be read. Inserting or removing the card remounts it.
+- **Settings**: brightness (50% by default), screen timeout (5 s to 2 min) and vibrate for messages.
+
+The watch's RTC keeps UTC. Wi-Fi, a GPS fix, the phone app or `make settime` set it.
+
+## Testing over USB serial
+
+The firmware takes one-line commands on the USB serial port (115200): `T<unix time>` sets the clock,
+`S` sends a screenshot (what `tools/screenshot.py` reads), `P<x>,<y>` taps the screen, and
+`D<x1>,<y1>,<x2>,<y2>` drags across it (`D205,420,205,80` swipes up to the apps). Don't change DTR
+or RTS on the port: that resets the ESP32-S3.
+
+## MeshCore
+
+`lib/MeshCore` is a pinned copy of the parts of [MeshCore](https://github.com/meshcore-dev/MeshCore)
+this uses, including the companion radio node the phone app talks to; `tools/sync-meshcore.sh`
+updates it (see its header). The Makefile's `MESH_FLAGS` set the radio defaults for a new node;
+after that, the phone app changes them.
 
 ## Hardware
 
