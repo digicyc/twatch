@@ -14,10 +14,12 @@ MESH_FLAGS := -DRADIOLIB_STATIC_ONLY=1 -DRADIOLIB_GODMODE=1 \
 	-DLORA_FREQ=910.525 -DLORA_BW=62.5 -DLORA_SF=7 -DLORA_CR=5 -DLORA_TX_POWER=22 \
 	-DSX126X_DIO3_TCXO_VOLTAGE=1.8f -DSX126X_DIO2_AS_RF_SWITCH=true -DSX126X_CURRENT_LIMIT=140 \
 	-DSX126X_RX_BOOSTED_GAIN=1 -DMAX_CONTACTS=64 -DMAX_GROUP_CHANNELS=8
+# LilyGoLib keeps a copy of the screen for `make screenshot`.
+APP_FLAGS := -DLILYGO_SCREEN_CAPTURE_ENABLED=1
 EXTRA_FLAGS ?=
 FQBN  := esp32:esp32:twatch_ultra:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=default,MSCOnBoot=default,DFUOnBoot=default,UploadMode=default,CPUFreq=240,PartitionScheme=app3M_fat9M_16MB,DebugLevel=none,LoopCore=1,EventsCore=1,EraseFlash=none,JTAGAdapter=default,Revision=$(strip $(RADIO))
 
-.PHONY: deps build upload monitor flash settime ports clean
+.PHONY: deps build upload monitor flash settime screenshot ports clean
 
 # Arduino libraries MeshCore and the Weather app need beyond LilyGoLib-ThirdParty.
 deps:
@@ -25,7 +27,7 @@ deps:
 
 build:
 	arduino-cli compile --fqbn '$(FQBN)' --build-path $(BUILD) \
-		--build-property "compiler.cpp.extra_flags=$(MESH_FLAGS) $(EXTRA_FLAGS)" \
+		--build-property "compiler.cpp.extra_flags=$(MESH_FLAGS) $(APP_FLAGS) $(EXTRA_FLAGS)" \
 		--library $(ROOT)/LilyGoLib --libraries $(ROOT)/LilyGoLib-ThirdParty --library lib/MeshCore .
 
 upload:
@@ -42,6 +44,11 @@ flash: build upload monitor
 settime:
 	@test -n "$(PORT)" || { echo "No watch serial port found; plug it in or pass PORT=/dev/ttyACMx"; exit 1; }
 	stty -F $(PORT) raw -echo && printf 'T%s\n' "$$(date +%s)" > $(PORT)
+
+# Saves what the screen shows to screenshot.png (or OUT=file.png).
+screenshot:
+	@test -n "$(PORT)" || { echo "No watch serial port found; plug it in or pass PORT=/dev/ttyACMx"; exit 1; }
+	uv run tools/screenshot.py --port $(PORT) --out $(or $(OUT),screenshot.png)
 
 ports:
 	arduino-cli board list

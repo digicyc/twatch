@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Generates steps_icon.c: the launcher's Steps icon, two footprints, as an LVGL A8 (alpha-only) image.
+"""Generates src/steps_icon.c: the launcher's Steps icon, two footprints, as an LVGL A8 (alpha-only) image.
 
 Each footprint is an oval sole and a round heel, tilted outward; the right foot is a step ahead of
 the left. The launcher tints it black with the image recolor style. Antialiased by supersampling.
 
-    python3 tools/make_steps_icon.py > steps_icon.c
+    python3 tools/make_steps_icon.py > src/steps_icon.c
 """
 import math
 

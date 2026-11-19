@@ -1,6 +1,6 @@
 // WatchApp's board definitions for MeshCore's companion radio code (companion_radio/MyMesh.cpp and
 // helpers/CommonRadioPrefs.cpp include <target.h>, which MeshCore normally gets from a variant).
-// The objects are defined in WatchApp's messenger.cpp.
+// The objects are defined in WatchApp's src/messenger.cpp.
 #pragma once
 
 #include <Mesh.h>

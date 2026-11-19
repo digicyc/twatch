@@ -1,7 +1,9 @@
 # WatchApp
 
 Arduino sketch for the LilyGo T-Watch Ultra, built with `arduino-cli`, ESP32 core 3.3.10,
-`../LilyGoLib`, and `../LilyGoLib-ThirdParty`.
+`../LilyGoLib`, and `../LilyGoLib-ThirdParty`. The code is in `src/` (`setup()` and `loop()` are in
+`src/main.cpp`); `WatchApp.ino` is only the stub file Arduino requires, `lib/MeshCore` is the copy
+of MeshCore it builds with, and `tools/` has the scripts that generate the images in `src/`.
 
 ```sh
 make build              # compile into ./build
@@ -63,7 +65,7 @@ make RADIO=Radio_LR1121 build   # if your watch has a different radio than SX126
   reboot. The watch face shows a small condition icon and the temperature in °F under the date:
   the latest conditions, or once those are over an hour old, the forecast for the current hour
   (hidden when the forecast has run out). The forecast is kept as a source-independent
-  `WeatherData` (`weather_set()` in `weather_app.h`), ready for a phone app to send weather over
+  `WeatherData` (`weather_set()` in `src/weather_app.h`), ready for a phone app to send weather over
   Bluetooth later.
 - **SD Card** shows the card's size and free space, a **Test read & write** button (writes 256 KB,
   reads it back, checks it, deletes it, and reports speeds), and a file browser: tap folders to
