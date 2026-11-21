@@ -97,7 +97,7 @@ void bluetooth_init(lv_obj_t *home)
     lv_obj_add_event_cb(power_switch, switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     // What the MeshCore app shows and asks for.
-    name_label = add_value_row(cont, "Device name", &lv_font_montserrat_24);
+    name_label = add_value_row(cont, "Device name", &font_emoji_24);
     pin_label = add_value_row(cont, "PIN", &lv_font_montserrat_32);
     lv_obj_set_style_text_letter_space(pin_label, 4, 0);
 

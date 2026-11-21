@@ -4,6 +4,7 @@
 #include "ui.h"
 #include <LilyGoLib.h>
 #include <stdio.h>
+#include <ctype.h>
 #include <string.h>
 #include <time.h>
 
@@ -18,10 +19,11 @@ static const char *CANNED_REPLIES[] = {
 
 static lv_obj_t *home_screen;
 static lv_obj_t *list_screen, *list_cont;
-static lv_obj_t *chat_screen, *chat_title, *chat_cont;
+static lv_obj_t *chat_screen, *chat_title, *chat_cont, *chat_leave;
 static lv_obj_t *reply_screen, *reply_cont;
+static lv_obj_t *leave_screen, *leave_title;
 static lv_obj_t *compose_screen, *compose_title, *compose_ta, *compose_kb;
-static bool editing_name;  // compose_screen is editing the watch name rather than a message
+static enum { COMPOSE_MESSAGE, COMPOSE_NAME, COMPOSE_CHANNEL } compose_mode;
 static lv_obj_t *toast;
 static lv_timer_t *toast_timer;
 static int open_chat = -1;  // chat shown on chat_screen
@@ -29,6 +31,7 @@ static int open_chat = -1;  // chat shown on chat_screen
 static void open_chat_view(int chat);
 static void compose_open_cb(lv_event_t *);
 static void name_open_cb(lv_event_t *);
+static void channel_open_cb(lv_event_t *);
 
 // "3:42 PM" for today, "Oct 28" for earlier days, "" if the clock isn't set.
 static const char *format_time(uint32_t t)
@@ -64,15 +67,34 @@ static void chat_row_clicked_cb(lv_event_t *e)
     open_chat_view((int)(intptr_t)lv_event_get_user_data(e));
 }
 
+// An orange outlined pill button, like the reply screen's "Type a message".
+static lv_obj_t *make_outline_button(lv_obj_t *parent, const char *text, lv_event_cb_t cb)
+{
+    lv_obj_t *btn = lv_button_create(parent);
+    lv_obj_set_size(btn, LV_PCT(100), 72);
+    lv_obj_set_style_radius(btn, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(btn, 2, 0);
+    lv_obj_set_style_border_color(btn, ORANGE, 0);
+    lv_obj_set_style_shadow_width(btn, 0, 0);
+    lv_obj_center(make_label(btn, text, &font_emoji_28, ORANGE));
+    lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, NULL);
+    return btn;
+}
+
 static void rebuild_list()
 {
     lv_obj_clean(list_cont);
     int ids[MAX_LISTED_CHATS];
     int n = messenger_chats(ids, MAX_LISTED_CHATS);
+    int contacts = 0;
     for (int i = 0; i < n; i++) {
         ChatSummary s;
         if (!messenger_chat_summary(ids[i], s)) {
             continue;
+        }
+        if (!s.is_channel && !contacts++) {
+            make_outline_button(list_cont, "#  Join a channel", channel_open_cb);  // after the channels
         }
         lv_obj_t *row = lv_obj_create(list_cont);
         lv_obj_set_size(row, LV_PCT(100), 100);
@@ -83,12 +105,12 @@ static void rebuild_list()
         lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_add_event_cb(row, chat_row_clicked_cb, LV_EVENT_CLICKED, (void *)(intptr_t)ids[i]);
 
-        lv_obj_t *name = make_label(row, s.name, &lv_font_montserrat_28, s.is_channel ? ORANGE : lv_color_white());
+        lv_obj_t *name = make_label(row, s.name, &font_emoji_28, s.is_channel ? ORANGE : lv_color_white());
         lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
-        lv_obj_set_size(name, 210, lv_font_get_line_height(&lv_font_montserrat_28));  // one line, "..." if longer
+        lv_obj_set_size(name, 210, lv_font_get_line_height(&font_emoji_28));  // one line, "..." if longer
         lv_obj_align(name, LV_ALIGN_LEFT_MID, 0, -18);
 
-        lv_obj_t *when = make_label(row, s.last_message ? format_time(s.last_activity) : "", &lv_font_montserrat_18, GRAY);
+        lv_obj_t *when = make_label(row, s.last_message ? format_time(s.last_activity) : "", &font_emoji_18, GRAY);
         lv_obj_align(when, LV_ALIGN_RIGHT_MID, 0, -18);
 
         char preview[MAX_CHAT_TEXT + 40];
@@ -102,9 +124,9 @@ static void rebuild_list()
         } else {
             strlcpy(preview, m->text, sizeof(preview));
         }
-        lv_obj_t *text = make_label(row, preview, &lv_font_montserrat_20, s.unread ? lv_color_white() : GRAY);
+        lv_obj_t *text = make_label(row, preview, &font_emoji_20, s.unread ? lv_color_white() : GRAY);
         lv_label_set_long_mode(text, LV_LABEL_LONG_DOT);
-        lv_obj_set_size(text, s.unread ? 250 : 300, lv_font_get_line_height(&lv_font_montserrat_20));
+        lv_obj_set_size(text, s.unread ? 250 : 300, lv_font_get_line_height(&font_emoji_20));
         lv_obj_align(text, LV_ALIGN_LEFT_MID, 0, 20);
 
         if (s.unread) {
@@ -117,16 +139,17 @@ static void rebuild_list()
             lv_obj_set_style_bg_color(badge, ORANGE, 0);
             lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
             lv_obj_remove_flag(badge, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_t *count = make_label(badge, "", &lv_font_montserrat_20, lv_color_black());
+            lv_obj_t *count = make_label(badge, "", &font_emoji_20, lv_color_black());
             lv_label_set_text_fmt(count, "%d", s.unread);
             lv_obj_center(count);
             lv_obj_align(badge, LV_ALIGN_RIGHT_MID, 0, 20);
         }
     }
-    if (n == 1) {
+    if (!contacts) {
+        make_outline_button(list_cont, "#  Join a channel", channel_open_cb);
         lv_obj_t *hint = make_label(list_cont, "Contacts appear here when nearby MeshCore nodes advertise. "
                                     "Tap " LV_SYMBOL_WIFI " so they can find this watch.",
-                                    &lv_font_montserrat_20, GRAY);
+                                    &font_emoji_20, GRAY);
         lv_obj_set_width(hint, LV_PCT(100));
         lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_margin_top(hint, 20, 0);
@@ -143,13 +166,13 @@ static void rebuild_list()
     lv_obj_set_style_margin_top(me, 8, 0);
     lv_obj_remove_flag(me, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(me, name_open_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *caption = make_label(me, "This watch", &lv_font_montserrat_20, GRAY);
+    lv_obj_t *caption = make_label(me, "This watch", &font_emoji_20, GRAY);
     lv_obj_align(caption, LV_ALIGN_LEFT_MID, 0, -18);
-    lv_obj_t *name = make_label(me, messenger_node_name(), &lv_font_montserrat_28, lv_color_white());
+    lv_obj_t *name = make_label(me, messenger_node_name(), &font_emoji_28, lv_color_white());
     lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
-    lv_obj_set_size(name, 260, lv_font_get_line_height(&lv_font_montserrat_28));
+    lv_obj_set_size(name, 260, lv_font_get_line_height(&font_emoji_28));
     lv_obj_align(name, LV_ALIGN_LEFT_MID, 0, 16);
-    lv_obj_t *edit = make_label(me, LV_SYMBOL_EDIT, &lv_font_montserrat_28, ORANGE);
+    lv_obj_t *edit = make_label(me, LV_SYMBOL_EDIT, &font_emoji_28, ORANGE);
     lv_obj_align(edit, LV_ALIGN_RIGHT_MID, 0, 0);
 }
 
@@ -176,7 +199,7 @@ static void build_list()
     list_screen = make_screen();
     header_button(list_screen, LV_SYMBOL_LEFT, LV_ALIGN_TOP_LEFT, list_back_cb);
     header_button(list_screen, LV_SYMBOL_WIFI, LV_ALIGN_TOP_RIGHT, advert_cb);
-    lv_obj_t *title = make_label(list_screen, "Messages", &lv_font_montserrat_32, lv_color_white());
+    lv_obj_t *title = make_label(list_screen, "Messages", &font_emoji_32, lv_color_white());
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 34);
     list_cont = make_scroll_column(list_screen);
 }
@@ -208,7 +231,7 @@ static void add_bubble(const ChatMessage &m, bool is_channel)
     lv_obj_remove_flag(item, LV_OBJ_FLAG_CLICKABLE);
 
     if (!mine && is_channel && m.sender[0]) {
-        lv_obj_t *sender = make_label(item, m.sender, &lv_font_montserrat_18, ORANGE);
+        lv_obj_t *sender = make_label(item, m.sender, &font_emoji_18, ORANGE);
         lv_obj_set_style_margin_left(sender, 12, 0);
     }
 
@@ -221,7 +244,7 @@ static void add_bubble(const ChatMessage &m, bool is_channel)
     lv_obj_set_style_bg_color(bubble, mine ? ORANGE : CARD, 0);
     lv_obj_set_style_bg_opa(bubble, LV_OPA_COVER, 0);
     lv_obj_remove_flag(bubble, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_t *text = make_label(bubble, m.text, &lv_font_montserrat_24, mine ? lv_color_black() : lv_color_white());
+    lv_obj_t *text = make_label(bubble, m.text, &font_emoji_24, mine ? lv_color_black() : lv_color_white());
     lv_obj_set_style_max_width(text, 270, 0);
 
     char meta[48];
@@ -232,7 +255,7 @@ static void add_bubble(const ChatMessage &m, bool is_channel)
         strlcpy(meta, when, sizeof(meta));
     }
     if (meta[0]) {
-        lv_obj_t *label = make_label(item, meta, &lv_font_montserrat_18,
+        lv_obj_t *label = make_label(item, meta, &font_emoji_18,
                                      m.status == MSG_FAILED ? lv_palette_main(LV_PALETTE_RED) : GRAY);
         lv_obj_set_style_margin_hor(label, 12, 0);
     }
@@ -246,11 +269,18 @@ static void rebuild_chat()
         return;
     }
     lv_label_set_text(chat_title, s.name);
+    if (s.is_channel && !s.is_public) {
+        lv_obj_remove_flag(chat_leave, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(chat_leave, LV_OBJ_FLAG_HIDDEN);
+    }
     int count = messenger_message_count(open_chat);
     if (!count) {
-        lv_obj_t *empty = make_label(chat_cont, s.is_channel ? "No messages yet.\nEveryone nearby can read\nthis channel."
-                                                             : "No messages yet",
-                                     &lv_font_montserrat_24, GRAY);
+        const char *text = s.is_public           ? "No messages yet.\nEveryone nearby can read\nthis channel."
+                           : s.name[0] == '#' ? "No messages yet.\nAnyone who joins this\nname can read it."
+                                              : "No messages yet";
+        lv_obj_t *empty = make_label(chat_cont, text,
+                                     &font_emoji_24, GRAY);
         lv_obj_set_style_text_align(empty, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_margin_top(empty, 80, 0);
     }
@@ -284,6 +314,15 @@ static void reply_open_cb(lv_event_t *)
     lv_screen_load_anim(reply_screen, LV_SCREEN_LOAD_ANIM_MOVE_TOP, 200, 0, false);
 }
 
+static void leave_open_cb(lv_event_t *)
+{
+    ChatSummary s;
+    if (messenger_chat_summary(open_chat, s)) {
+        lv_label_set_text_fmt(leave_title, "Leave %s?", s.name);
+        lv_screen_load_anim(leave_screen, LV_SCREEN_LOAD_ANIM_MOVE_TOP, 200, 0, false);
+    }
+}
+
 static void build_chat()
 {
     chat_screen = make_screen();
@@ -292,9 +331,10 @@ static void build_chat()
     lv_obj_set_style_pad_bottom(chat_cont, 120, 0);  // the last message can scroll clear of the reply button
 
     header_button(chat_screen, LV_SYMBOL_LEFT, LV_ALIGN_TOP_LEFT, chat_back_cb);
-    chat_title = make_label(chat_screen, "", &lv_font_montserrat_32, lv_color_white());
+    chat_leave = header_button(chat_screen, LV_SYMBOL_TRASH, LV_ALIGN_TOP_RIGHT, leave_open_cb);
+    chat_title = make_label(chat_screen, "", &font_emoji_32, lv_color_white());
     lv_label_set_long_mode(chat_title, LV_LABEL_LONG_DOT);
-    lv_obj_set_size(chat_title, 250, lv_font_get_line_height(&lv_font_montserrat_32));
+    lv_obj_set_size(chat_title, 250, lv_font_get_line_height(&font_emoji_32));
     lv_obj_set_style_text_align(chat_title, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(chat_title, LV_ALIGN_TOP_MID, 0, 34);
 
@@ -333,19 +373,11 @@ static void build_reply()
 {
     reply_screen = make_screen();
     header_button(reply_screen, LV_SYMBOL_CLOSE, LV_ALIGN_TOP_LEFT, reply_cancel_cb);
-    lv_obj_t *title = make_label(reply_screen, "Reply", &lv_font_montserrat_32, lv_color_white());
+    lv_obj_t *title = make_label(reply_screen, "Reply", &font_emoji_32, lv_color_white());
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 34);
 
     reply_cont = make_scroll_column(reply_screen);
-    lv_obj_t *type = lv_button_create(reply_cont);
-    lv_obj_set_size(type, LV_PCT(100), 72);
-    lv_obj_set_style_radius(type, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_opa(type, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(type, 2, 0);
-    lv_obj_set_style_border_color(type, ORANGE, 0);
-    lv_obj_set_style_shadow_width(type, 0, 0);
-    lv_obj_center(make_label(type, LV_SYMBOL_KEYBOARD "  Type a message", &lv_font_montserrat_28, ORANGE));
-    lv_obj_add_event_cb(type, compose_open_cb, LV_EVENT_CLICKED, NULL);
+    make_outline_button(reply_cont, LV_SYMBOL_KEYBOARD "  Type a message", compose_open_cb);
 
     for (const char *text : CANNED_REPLIES) {
         lv_obj_t *btn = lv_button_create(reply_cont);
@@ -353,16 +385,86 @@ static void build_reply()
         lv_obj_set_style_radius(btn, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_bg_color(btn, CARD, 0);
         lv_obj_set_style_shadow_width(btn, 0, 0);
-        lv_obj_center(make_label(btn, text, &lv_font_montserrat_28, lv_color_white()));
+        lv_obj_center(make_label(btn, text, &font_emoji_28, lv_color_white()));
         lv_obj_add_event_cb(btn, reply_chosen_cb, LV_EVENT_CLICKED, (void *)text);
     }
+}
+
+// ---------- Leave channel ----------
+
+static void leave_cancel_cb(lv_event_t *)
+{
+    lv_screen_load_anim(chat_screen, LV_SCREEN_LOAD_ANIM_MOVE_BOTTOM, 200, 0, false);
+}
+
+static void leave_confirm_cb(lv_event_t *)
+{
+    messenger_remove_channel(open_chat);
+    lv_screen_load_anim(list_screen, LV_SCREEN_LOAD_ANIM_MOVE_BOTTOM, 200, 0, false);
+}
+
+static void build_leave()
+{
+    leave_screen = make_screen();
+    header_button(leave_screen, LV_SYMBOL_CLOSE, LV_ALIGN_TOP_LEFT, leave_cancel_cb);
+    leave_title = make_label(leave_screen, "", &font_emoji_28, lv_color_white());
+    lv_obj_set_width(leave_title, 410 - 48);
+    lv_obj_set_style_text_align(leave_title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(leave_title, LV_ALIGN_TOP_MID, 0, 120);
+    lv_obj_t *note = make_label(leave_screen, "Its messages are deleted from this watch, and the phone app loses it too.",
+                                &font_emoji_20, GRAY);
+    lv_obj_set_width(note, 410 - 80);
+    lv_obj_set_style_text_align(note, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align_to(note, leave_title, LV_ALIGN_OUT_BOTTOM_MID, 0, 50);
+
+    lv_obj_t *leave = lv_button_create(leave_screen);
+    lv_obj_set_size(leave, 410 - 48, 72);
+    lv_obj_set_style_radius(leave, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(leave, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_obj_set_style_shadow_width(leave, 0, 0);
+    lv_obj_center(make_label(leave, LV_SYMBOL_TRASH "  Leave channel", &font_emoji_28, lv_color_white()));
+    lv_obj_align(leave, LV_ALIGN_BOTTOM_MID, 0, -40);
+    lv_obj_add_event_cb(leave, leave_confirm_cb, LV_EVENT_CLICKED, NULL);
 }
 
 // ---------- Compose ----------
 
 static void compose_close()
 {
-    lv_screen_load_anim(editing_name ? list_screen : chat_screen, LV_SCREEN_LOAD_ANIM_MOVE_BOTTOM, 200, 0, false);
+    lv_screen_load_anim(compose_mode == COMPOSE_MESSAGE ? chat_screen : list_screen, LV_SCREEN_LOAD_ANIM_MOVE_BOTTOM,
+                        200, 0, false);
+}
+
+// Joins the hashtag channel typed on the compose screen and opens it. Names are lowercase letters,
+// digits and hyphens like in the MeshCore app; the leading '#' is optional.
+static void join_typed_channel(const char *text)
+{
+    while (*text == '#') {
+        text++;
+    }
+    char name[MAX_NODE_NAME + 1] = "#";
+    size_t len = 1;
+    for (; *text && len < sizeof(name) - 1; text++) {
+        char c = tolower(*text);
+        if (c == ' ' && text[strspn(text, " ")] == '\0') {
+            break;  // trailing spaces
+        }
+        if (!isalnum(c) && c != '-') {
+            show_toast("Use letters, numbers and -");
+            return;
+        }
+        name[len++] = c;
+    }
+    name[len] = '\0';
+    if (len == 1) {
+        return;
+    }
+    int chat = messenger_add_channel(name);
+    if (chat < 0) {
+        show_toast("No room for more channels");
+        return;
+    }
+    open_chat_view(chat);
 }
 
 static void compose_cancel_cb(lv_event_t *)
@@ -379,7 +481,11 @@ static void compose_send_cb(lv_event_t *)
     if (!*text) {
         return;
     }
-    if (editing_name) {
+    if (compose_mode == COMPOSE_CHANNEL) {
+        join_typed_channel(text);  // opens the channel, or shows what's wrong and stays here
+        return;
+    }
+    if (compose_mode == COMPOSE_NAME) {
         char name[MAX_NODE_NAME + 1];
         strlcpy(name, text, sizeof(name));
         for (size_t len = strlen(name); len && name[len - 1] == ' '; len--) {
@@ -411,31 +517,37 @@ static void compose_open_cb(lv_event_t *)
     if (!messenger_chat_summary(open_chat, s)) {
         return;
     }
-    editing_name = false;
+    compose_mode = COMPOSE_MESSAGE;
     // Channel messages go out as "<node name>: <text>", and MeshCore truncates the whole thing.
     compose_open(s.name, "Message", "", s.is_channel ? MAX_CHAT_TEXT - strlen(messenger_node_name()) - 2 : MAX_CHAT_TEXT);
 }
 
 static void name_open_cb(lv_event_t *)
 {
-    editing_name = true;
+    compose_mode = COMPOSE_NAME;
     compose_open("Watch name", "Name", messenger_node_name(), MAX_NODE_NAME);
+}
+
+static void channel_open_cb(lv_event_t *)
+{
+    compose_mode = COMPOSE_CHANNEL;
+    compose_open("Join channel", "#channel", "#", MAX_NODE_NAME);
 }
 
 static void build_compose()
 {
     compose_screen = make_screen();
     header_button(compose_screen, LV_SYMBOL_CLOSE, LV_ALIGN_TOP_LEFT, compose_cancel_cb);
-    compose_title = make_label(compose_screen, "", &lv_font_montserrat_28, lv_color_white());
+    compose_title = make_label(compose_screen, "", &font_emoji_28, lv_color_white());
     lv_label_set_long_mode(compose_title, LV_LABEL_LONG_DOT);
-    lv_obj_set_size(compose_title, 250, lv_font_get_line_height(&lv_font_montserrat_28));
+    lv_obj_set_size(compose_title, 250, lv_font_get_line_height(&font_emoji_28));
     lv_obj_set_style_text_align(compose_title, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(compose_title, LV_ALIGN_TOP_MID, 0, 38);
 
     compose_ta = lv_textarea_create(compose_screen);
     lv_obj_set_size(compose_ta, 410 - 48, 502 - KB_HEIGHT - 96 - 10);
     lv_obj_align(compose_ta, LV_ALIGN_TOP_MID, 0, 96);
-    lv_obj_set_style_text_font(compose_ta, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(compose_ta, &font_emoji_24, 0);
     lv_obj_set_style_bg_color(compose_ta, CARD, 0);
     lv_obj_set_style_radius(compose_ta, 20, 0);
     lv_obj_set_style_border_width(compose_ta, 0, LV_STATE_ANY);
@@ -455,7 +567,7 @@ static void messenger_changed(int chat, bool incoming)
         }
         lv_display_trigger_activity(NULL);  // wakes the screen and restarts its timeout
     }
-    if (chat == open_chat) {
+    if (chat == open_chat || chat < 0) {
         if (lv_screen_active() == chat_screen) {
             messenger_mark_read(chat);
         }
@@ -470,11 +582,12 @@ void messages_init(lv_obj_t *home)
     build_list();
     build_chat();
     build_reply();
+    build_leave();
     build_compose();
     rebuild_list();
 
     // Toasts sit on the top layer so they show over whichever screen is active.
-    toast = make_label(lv_layer_top(), "", &lv_font_montserrat_20, lv_color_white());
+    toast = make_label(lv_layer_top(), "", &font_emoji_20, lv_color_white());
     lv_obj_set_style_bg_color(toast, lv_color_hex(0x3A3A3C), 0);
     lv_obj_set_style_bg_opa(toast, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(toast, LV_RADIUS_CIRCLE, 0);

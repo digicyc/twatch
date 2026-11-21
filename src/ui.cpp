@@ -1,6 +1,21 @@
 #include "ui.h"
 #include <string.h>
 
+extern "C" const lv_font_t emoji_font;
+
+static lv_font_t with_emoji(const lv_font_t &base)
+{
+    lv_font_t font = base;
+    font.fallback = &emoji_font;
+    return font;
+}
+
+const lv_font_t font_emoji_18 = with_emoji(lv_font_montserrat_18);
+const lv_font_t font_emoji_20 = with_emoji(lv_font_montserrat_20);
+const lv_font_t font_emoji_24 = with_emoji(lv_font_montserrat_24);
+const lv_font_t font_emoji_28 = with_emoji(lv_font_montserrat_28);
+const lv_font_t font_emoji_32 = with_emoji(lv_font_montserrat_32);
+
 lv_obj_t *make_screen()
 {
     lv_obj_t *screen = lv_obj_create(NULL);

@@ -27,7 +27,7 @@ static const char *OLD_CONTACTS_FILE = "/mesh/contacts";
 struct Chat {
     bool used;
     bool is_channel;
-    uint8_t pub_key[PUB_KEY_SIZE];  // the contact's key; unused for the channel
+    uint8_t pub_key[PUB_KEY_SIZE];  // the contact's key, or the channel's secret
     char name[32];
     uint8_t unread;
     uint32_t last_activity;
@@ -46,10 +46,16 @@ struct ChatFileHeader {
 };
 static const uint32_t CHAT_FILE_VERSION = 1;
 
-static Chat *chats;  // MAX_CHATS entries in PSRAM; chats[0] is the Public channel
+// MeshCore's PUBLIC_GROUP_PSK, "izOH6cXN6mrJ5e26oRXNcg==".
+static const uint8_t PUBLIC_SECRET[PUB_KEY_SIZE] = {0x8b, 0x33, 0x87, 0xe9, 0xc5, 0xcd, 0xea, 0x6a,
+                                                    0xc9, 0xe5, 0xed, 0xba, 0xa1, 0x15, 0xcd, 0x72};
+static const uint8_t CMD_SET_CHANNEL = 32;  // MyMesh's phone app command that adds, changes or removes a channel
+
+static Chat *chats;  // MAX_CHATS entries in PSRAM: one per MeshCore channel, the rest for contacts
 static MessengerListener listener;
 static Preferences prefs;
 static bool radio_ok;
+static bool channels_changed;  // the phone app changed MyMesh's channels
 
 // The watch's own DMs are sent one at a time, retried here because MyMesh leaves retries to the app.
 struct MessageRef {
@@ -132,13 +138,19 @@ static ChatMessage *message_at(int chat, uint32_t seq)
     return &c.msgs[seq % MAX_MESSAGES];
 }
 
+static bool is_public(const Chat &c)
+{
+    return c.is_channel && memcmp(c.pub_key, PUBLIC_SECRET, PUB_KEY_SIZE) == 0;
+}
+
 static void chat_path(int chat, char *path)
 {
-    if (chats[chat].is_channel) {
+    const uint8_t *k = chats[chat].pub_key;
+    if (is_public(chats[chat])) {
         sprintf(path, "%s/public", CHAT_DIR);
     } else {
-        const uint8_t *k = chats[chat].pub_key;
-        sprintf(path, "%s/%02x%02x%02x%02x%02x%02x", CHAT_DIR, k[0], k[1], k[2], k[3], k[4], k[5]);
+        sprintf(path, "%s/%s%02x%02x%02x%02x%02x%02x", CHAT_DIR, chats[chat].is_channel ? "ch-" : "", k[0], k[1], k[2],
+                k[3], k[4], k[5]);
     }
 }
 
@@ -178,20 +190,20 @@ static void load_chats()
             continue;
         }
         int slot = 0;
-        if (!h.is_channel) {
-            for (slot = 1; slot < MAX_CHATS && chats[slot].used; slot++) {
-            }
-            if (slot == MAX_CHATS) {
-                break;
-            }
+        while (slot < MAX_CHATS && chats[slot].used) {
+            slot++;
+        }
+        if (slot == MAX_CHATS) {
+            break;
         }
         Chat &c = chats[slot];
         c.used = true;
         c.is_channel = h.is_channel;
         memcpy(c.pub_key, h.pub_key, PUB_KEY_SIZE);
-        if (!h.is_channel) {
-            memcpy(c.name, h.name, sizeof(c.name));
+        if (c.is_channel && strcmp(f.name(), "public") == 0) {
+            memcpy(c.pub_key, PUBLIC_SECRET, PUB_KEY_SIZE);  // saved before channel chats kept their secret
         }
+        memcpy(c.name, h.name, sizeof(c.name));
         c.unread = h.unread;
         c.last_activity = h.last_activity;
         uint32_t count = min(h.count, (uint32_t)MAX_MESSAGES);
@@ -202,43 +214,55 @@ static void load_chats()
     }
 }
 
-static int find_contact_chat(const uint8_t *pub_key)
+static int find_chat(bool is_channel, const uint8_t *key)
 {
-    for (int i = 1; i < MAX_CHATS; i++) {
-        if (chats[i].used && memcmp(chats[i].pub_key, pub_key, PUB_KEY_SIZE) == 0) {
+    for (int i = 0; i < MAX_CHATS; i++) {
+        if (chats[i].used && chats[i].is_channel == is_channel && memcmp(chats[i].pub_key, key, PUB_KEY_SIZE) == 0) {
             return i;
         }
     }
     return -1;
 }
 
-// Finds or creates the chat for a contact, evicting the least recently active one if full.
-static int contact_chat(const uint8_t *pub_key, const char *name)
+static void delete_chat(int chat)
 {
-    int chat = find_contact_chat(pub_key);
+    char path[48];
+    chat_path(chat, path);
+    FFat.remove(path);
+    chats[chat].used = false;
+}
+
+// Finds or creates a chat, evicting the least recently active contact chat if full. There are
+// always contact chats to evict, since MAX_GROUP_CHANNELS is far below MAX_CHATS.
+static int find_or_add_chat(bool is_channel, const uint8_t *key, const char *name)
+{
+    int chat = find_chat(is_channel, key);
     if (chat < 0) {
-        chat = 1;
-        for (int i = 1; i < MAX_CHATS; i++) {
+        for (int i = 0; i < MAX_CHATS; i++) {
             if (!chats[i].used) {
                 chat = i;
                 break;
             }
-            if (chats[i].last_activity < chats[chat].last_activity) {
+            if (!chats[i].is_channel && (chat < 0 || chats[i].last_activity < chats[chat].last_activity)) {
                 chat = i;
             }
         }
         if (chats[chat].used) {
-            char path[48];
-            chat_path(chat, path);
-            FFat.remove(path);
+            delete_chat(chat);
         }
         memset(&chats[chat], 0, sizeof(Chat));
         chats[chat].used = true;
-        memcpy(chats[chat].pub_key, pub_key, PUB_KEY_SIZE);
+        chats[chat].is_channel = is_channel;
+        memcpy(chats[chat].pub_key, key, PUB_KEY_SIZE);
         chats[chat].last_activity = time(NULL);
     }
     strlcpy(chats[chat].name, name, sizeof(chats[chat].name));
     return chat;
+}
+
+static int contact_chat(const uint8_t *pub_key, const char *name)
+{
+    return find_or_add_chat(false, pub_key, name);
 }
 
 static uint32_t add_message(int chat, uint32_t time, uint8_t status, const char *sender, const char *text)
@@ -288,15 +312,38 @@ static void add_and_notify(int chat, uint32_t time, uint8_t status, const char *
 
 // ---------- Mesh ----------
 
-// Index of the channel shown as the watch's Public chat; the phone app can rearrange channels.
-static int public_channel_idx(ChannelDetails &ch)
+// MyMesh's channel slot for a channel chat, or -1. Empty slots have no name. The phone app can
+// rearrange channels, so chats find theirs by secret.
+static int channel_idx(const Chat &c, ChannelDetails &ch)
 {
-    for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {
-        if (the_mesh.getChannel(i, ch) && strcmp(ch.name, "Public") == 0) {
+    for (int i = 0; c.is_channel && i < MAX_GROUP_CHANNELS; i++) {
+        if (the_mesh.getChannel(i, ch) && ch.name[0] && memcmp(ch.channel.secret, c.pub_key, PUB_KEY_SIZE) == 0) {
             return i;
         }
     }
     return -1;
+}
+
+// Gives each of MyMesh's channels a chat and deletes the chats of channels that are gone.
+static void sync_channels()
+{
+    bool keep[MAX_CHATS] = {};
+    ChannelDetails ch;
+    for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {
+        if (the_mesh.getChannel(i, ch) && ch.name[0]) {
+            bool is_new = find_chat(true, ch.channel.secret) < 0;
+            int chat = find_or_add_chat(true, ch.channel.secret, ch.name);
+            keep[chat] = true;
+            if (is_new) {
+                save_chat(chat);
+            }
+        }
+    }
+    for (int i = 0; i < MAX_CHATS; i++) {
+        if (chats[i].used && chats[i].is_channel && !keep[i]) {
+            delete_chat(i);
+        }
+    }
 }
 
 static void finish_send(uint8_t status)
@@ -358,10 +405,11 @@ public:
 
     void onChannelMessageRecv(mesh::Packet *pkt, ChannelDetails &channel, const char *text) override
     {
-        if (strcmp(channel.name, "Public") != 0) {
-            return;  // other channels are only shown in the phone app
+        int chat = find_chat(true, channel.channel.secret);
+        if (chat < 0) {
+            return;
         }
-        Serial.printf("Public: %s\n", text);
+        Serial.printf("%s: %s\n", channel.name, text);
         // Channel messages are "<sender>: <text>".
         char sender[32] = "";
         const char *sep = strstr(text, ": ");
@@ -370,7 +418,7 @@ public:
             sender[sep - text] = '\0';
             text = sep + 2;
         }
-        add_and_notify(0, time(NULL), MSG_RECEIVED, sender, text);
+        add_and_notify(chat, time(NULL), MSG_RECEIVED, sender, text);
     }
 
     void onQueueSizeChanged(int) override {}
@@ -399,6 +447,10 @@ static WatchListener watch_listener;
 // CMD_SEND_TXT_MSG and CMD_SEND_CHANNEL_TXT_MSG.
 static void on_app_frame(const uint8_t *f, size_t len)
 {
+    if (f[0] == CMD_SET_CHANNEL) {
+        channels_changed = true;  // MyMesh applies it after this returns
+        return;
+    }
     char text[MAX_CHAT_TEXT + 1];
     uint32_t timestamp;
     if (f[0] == 2 && len >= 14 && f[1] == TXT_TYPE_PLAIN) {
@@ -414,12 +466,13 @@ static void on_app_frame(const uint8_t *f, size_t len)
         }
     } else if (f[0] == 3 && len >= 7 && f[1] == TXT_TYPE_PLAIN) {
         ChannelDetails ch;
-        if (f[2] != public_channel_idx(ch)) {
+        int chat = the_mesh.getChannel(f[2], ch) && ch.name[0] ? find_chat(true, ch.channel.secret) : -1;
+        if (chat < 0) {
             return;
         }
         memcpy(&timestamp, &f[3], 4);
         strlcpy(text, (const char *)&f[7], min(len - 7 + 1, sizeof(text)));
-        add_and_notify(0, timestamp, MSG_SENT, "", text);
+        add_and_notify(chat, timestamp, MSG_SENT, "", text);
     }
 }
 
@@ -453,10 +506,6 @@ static bool migrate_old_files()
 bool messenger_init()
 {
     chats = (Chat *)ps_calloc(MAX_CHATS, sizeof(Chat));
-    chats[0].used = true;
-    chats[0].is_channel = true;
-    strcpy(chats[0].name, "Public");
-
     FFat.mkdir("/mesh");
     FFat.mkdir(CHAT_DIR);
     load_chats();
@@ -494,6 +543,7 @@ bool messenger_init()
     ble.begin(ble_name, the_mesh.getBLEPin(), on_app_frame, prefs.getBool("bt", true));
     the_mesh.startInterface(ble);
     the_mesh.setListener(&watch_listener);
+    sync_channels();
     radio_ok = true;
 
     // Let nodes in direct range know we're here; a flood advert is sent on request.
@@ -509,6 +559,11 @@ void messenger_loop()
         return;
     }
     the_mesh.loop();
+    if (channels_changed) {
+        channels_changed = false;
+        sync_channels();
+        notify(-1, false);
+    }
     if (pending.active && (long)(millis() - pending.deadline) >= 0) {
         send_timed_out();
     }
@@ -529,9 +584,14 @@ int messenger_chats(int *ids, int max)
             ids[n++] = i;
         }
     }
-    // Public stays first; the rest by most recent activity.
-    for (int i = 2; i < n; i++) {
-        for (int j = i; j > 1 && chats[ids[j - 1]].last_activity < chats[ids[j]].last_activity; j--) {
+    // Public, the other channels in MyMesh's order, then contacts by most recent activity.
+    auto rank = [](int chat) -> int64_t {
+        ChannelDetails ch;
+        const Chat &c = chats[chat];
+        return is_public(c) ? -2 : c.is_channel ? channel_idx(c, ch) : MAX_GROUP_CHANNELS + (int64_t)(UINT32_MAX - c.last_activity);
+    };
+    for (int i = 1; i < n; i++) {
+        for (int j = i; j > 0 && rank(ids[j - 1]) > rank(ids[j]); j--) {
             int tmp = ids[j];
             ids[j] = ids[j - 1];
             ids[j - 1] = tmp;
@@ -548,6 +608,7 @@ bool messenger_chat_summary(int chat, ChatSummary &out)
     Chat &c = chats[chat];
     out.name = c.name;
     out.is_channel = c.is_channel;
+    out.is_public = is_public(c);
     out.unread = c.unread;
     out.last_activity = c.last_activity;
     out.last_message = c.total ? message_at(chat, c.total - 1) : NULL;
@@ -574,7 +635,7 @@ bool messenger_send(int chat, const char *text)
     uint32_t now = time(NULL);
     if (c.is_channel) {
         ChannelDetails ch;
-        bool ok = public_channel_idx(ch) >= 0 &&
+        bool ok = channel_idx(c, ch) >= 0 &&
                   the_mesh.sendGroupMessage(now, ch.channel, the_mesh.getNodeName(), text, strlen(text));
         add_message(chat, now, ok ? MSG_SENT : MSG_FAILED, "", text);
     } else {
@@ -586,6 +647,47 @@ bool messenger_send(int chat, const char *text)
     save_chat(chat);
     notify(chat, false);
     return true;
+}
+
+int messenger_add_channel(const char *name)
+{
+    if (!radio_ok) {
+        return -1;
+    }
+    ChannelDetails ch;
+    memset(&ch, 0, sizeof(ch));
+    strlcpy(ch.name, name, sizeof(ch.name));
+    mesh::Utils::sha256(ch.channel.secret, 16, (const uint8_t *)name, strlen(name));  // a 128-bit key
+    int chat = find_chat(true, ch.channel.secret);
+    if (chat >= 0) {
+        return chat;  // already joined
+    }
+    ChannelDetails slot;
+    for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {
+        if (the_mesh.getChannel(i, slot) && !slot.name[0]) {
+            the_mesh.setChannel(i, ch);
+            store.saveChannels(&the_mesh);  // MyMesh::saveChannels() is private
+            sync_channels();
+            chat = find_chat(true, ch.channel.secret);
+            notify(chat, false);
+            return chat;
+        }
+    }
+    return -1;
+}
+
+void messenger_remove_channel(int chat)
+{
+    ChannelDetails ch;
+    int idx = radio_ok ? channel_idx(chats[chat], ch) : -1;
+    if (idx < 0) {
+        return;
+    }
+    memset(&ch, 0, sizeof(ch));
+    the_mesh.setChannel(idx, ch);
+    store.saveChannels(&the_mesh);  // MyMesh::saveChannels() is private
+    sync_channels();
+    notify(chat, false);
 }
 
 void messenger_mark_read(int chat)

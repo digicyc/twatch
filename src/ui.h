@@ -5,6 +5,10 @@
 static const lv_color_t GRAY = LV_COLOR_MAKE(0x9E, 0x9E, 0x9E);
 static const lv_color_t CARD = LV_COLOR_MAKE(0x1C, 0x1C, 0x1E);
 
+// Montserrat that falls back to monochrome emoji (src/emoji_font.c), for text from other nodes such
+// as contact and channel names and messages.
+extern const lv_font_t font_emoji_18, font_emoji_20, font_emoji_24, font_emoji_28, font_emoji_32;
+
 lv_obj_t *make_screen();
 lv_obj_t *make_label(lv_obj_t *parent, const char *text, const lv_font_t *font, lv_color_t color);
 

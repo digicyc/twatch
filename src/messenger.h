@@ -25,24 +25,32 @@ struct ChatMessage {
 struct ChatSummary {
     const char *name;
     bool is_channel;
+    bool is_public;  // the Public channel
     uint8_t unread;
     uint32_t last_activity;  // epoch seconds, our clock
     const ChatMessage *last_message;  // NULL if none
 };
 
-// Called when a chat changes. `incoming` is true for a newly received message.
+// Called when a chat changes, or with chat -1 when the phone app changed the channels. `incoming` is
+// true for a newly received message.
 typedef void (*MessengerListener)(int chat, bool incoming);
 
 bool messenger_init();  // false if the radio failed to start
 void messenger_loop();
 
-// Chat ids are stable while running. Fills `ids` (Public first, then most recent first).
+// Chat ids are stable while the chat exists. Fills `ids`: Public, the other channels, then contacts
+// with the most recent first. Each MeshCore channel has a chat.
 int messenger_chats(int *ids, int max);
 bool messenger_chat_summary(int chat, ChatSummary &out);
 int messenger_message_count(int chat);
 const ChatMessage *messenger_message(int chat, int index);  // 0 = oldest
 bool messenger_send(int chat, const char *text);
 void messenger_mark_read(int chat);
+// Joins a hashtag channel such as "#hiking", whose key is derived from the name like the MeshCore
+// app does, so everyone who joins the same name shares it. Returns its chat (the existing one if
+// already joined), or -1 if all MAX_GROUP_CHANNELS slots are taken.
+int messenger_add_channel(const char *name);
+void messenger_remove_channel(int chat);  // also removes it from the phone app's channels
 int messenger_unread_total();
 
 void messenger_send_advert();  // flood advert so others can add us

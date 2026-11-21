@@ -48,12 +48,14 @@ with clangd for editor completion.
   except while an alarm rings. Swipe up on the face for the apps.
 - **Watch face**: time, date, battery, a Wi-Fi icon while connected, GPS satellites (gray while
   searching, green with a fix), and the current weather.
-- **Messages** (MeshCore over LoRa, USA/Canada preset, 910.525 MHz): the Public channel and a chat
-  for each companion that has advertised nearby, with unread counts. New messages buzz (Settings can
-  turn that off) and wake the screen. Reply with a quick reply or the slide-up keyboard; direct
-  messages show Sending / Sent / Delivered / Failed. The signal icon advertises this watch, and the
-  **This watch** card sets the name others see (TWatch-XXXX by default). Chats are kept on the FFat
-  partition.
+- **Messages** (MeshCore over LoRa, USA/Canada preset, 910.525 MHz): a chat for each channel (Public
+  and any added here or in the phone app) and for each companion that has advertised nearby, with
+  unread counts. **Join a channel** adds a hashtag channel such as `#hiking`, which everyone who
+  joins the same name shares; the trash icon in a channel leaves it (up to 8 channels). Names show
+  emoji, in the text color. New messages buzz (Settings can turn that off) and wake the screen.
+  Reply with a quick reply or the slide-up keyboard; direct messages show Sending / Sent / Delivered
+  / Failed. The signal icon advertises this watch, and the **This watch** card sets the name others
+  see (TWatch-XXXX by default). Chats are kept on the FFat partition.
 - **Bluetooth** lets the MeshCore phone app use the watch as its radio. It shows the name the app
   lists (**MeshCore-** plus the watch name) and the six-digit PIN to enter when pairing. Messages
   sent from the phone also appear in the watch's chats, and up to 16 received while the phone is
